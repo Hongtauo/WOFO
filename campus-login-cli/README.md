@@ -1,4 +1,4 @@
-# Campus Login CLI
+# WOFOLogin CLI
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../LICENSE)
 
@@ -30,8 +30,8 @@ python3 campus_login_cli.py logout
 ```bash
 cd campus-login-cli
 python3 -m pip install .
-campus-login status
-campus-login login --user '学号' --service '电信'
+wofologin status
+wofologin login --user '学号' --service '电信'
 ```
 
 建议在虚拟环境或通过 `pipx install .` 安装。
@@ -41,12 +41,12 @@ campus-login login --user '学号' --service '电信'
 发布的 `.deb` 已把 Python 运行时和程序一起封装，目标电脑不需要安装 Python：
 
 ```bash
-sudo apt install ./campus-login_1.0.1_amd64.deb
-campus-login status
-campus-login login --user '学号' --service '电信'
+sudo apt install ./WOFOLogin_1.0.1_amd64.deb
+wofologin status
+wofologin login --user '学号' --service '电信'
 ```
 
-ARM64 Linux（例如 Jetson）使用 `campus-login_1.0.1_arm64.deb`。
+ARM64 Linux（例如 Jetson）使用 `WOFOLogin_1.0.1_arm64.deb`。
 从 1.0.1 开始，Debian 包显式使用 xz 压缩，以兼容 Jetson 上常见的
 较旧 Ubuntu/dpkg 版本；Linux 独立程序也固定在 Ubuntu 20.04 环境中构建并
 执行启动测试，避免依赖 Ubuntu 24.04 的 `GLIBC_2.38`。
@@ -54,19 +54,19 @@ ARM64 Linux（例如 Jetson）使用 `campus-login_1.0.1_arm64.deb`。
 配置开机启动和断线重连：
 
 ```bash
-sudo editor /etc/default/campus-login
-sudo systemctl enable --now campus-login
-systemctl status campus-login
-journalctl -u campus-login -f
+sudo editor /etc/default/wofologin
+sudo systemctl enable --now wofologin
+systemctl status wofologin
+journalctl -u wofologin -f
 ```
 
-`/etc/default/campus-login` 以 `0600` 权限安装，其中需要填写账号和密码。卸载：
+`/etc/default/wofologin` 以 `0600` 权限安装，其中需要填写账号和密码。卸载：
 
 ```bash
-sudo apt remove campus-login
+sudo apt remove wofologin
 ```
 
-直接执行 `apt install campus-login` 还需要将 `.deb` 发布到一个签名的 APT 软件源；
+直接执行 `apt install wofologin` 还需要将 `.deb` 发布到一个签名的 APT 软件源；
 本项目当前提供的是可由 `apt install ./文件.deb` 安装的标准 Debian 包。
 
 ## 非交互运行
@@ -74,7 +74,7 @@ sudo apt remove campus-login
 后台服务没有交互终端，需要从环境变量读取密码：
 
 ```bash
-CAMPUS_LOGIN_PASSWORD='你的密码' campus-login daemon --user '学号'
+CAMPUS_LOGIN_PASSWORD='你的密码' wofologin daemon --user '学号'
 ```
 
 密码不会作为命令行参数出现，因此不会暴露在 `ps` 的命令列表中。仍应限制保存
@@ -83,7 +83,7 @@ CAMPUS_LOGIN_PASSWORD='你的密码' campus-login daemon --user '学号'
 ## 更换门户地址
 
 ```bash
-campus-login --portal 'http://portal.example.edu' login --user '学号'
+wofologin --portal 'http://portal.example.edu' login --user '学号'
 ```
 
 也可设置 `CAMPUS_LOGIN_PORTAL` 环境变量。`--portal` 等全局选项应写在
@@ -101,8 +101,8 @@ PyInstaller 不支持交叉编译，请分别在 macOS 和 Linux 上构建：
 
 ```bash
 python3 -m pip install pyinstaller
-python3 -m PyInstaller --onefile --name campus-login campus_login_cli.py
-./dist/campus-login status
+python3 -m PyInstaller --onefile --name wofologin campus_login_cli.py
+./dist/wofologin status
 ```
 
 也可以使用已经准备好的脚本：
@@ -113,7 +113,7 @@ python3 -m pip install pyinstaller
 sudo apt install dpkg-dev
 ./build-linux-deb.sh
 
-# 必须在 macOS 构建机上执行，生成独立可执行文件 dist/campus-login
+# 必须在 macOS 构建机上执行，生成独立可执行文件 dist/wofologin
 python3 -m pip install pyinstaller
 ./build-macos.sh
 ```
@@ -125,7 +125,7 @@ python3 -m pip install pyinstaller
 生成更新说明并上传安装包：
 
 ```bash
-git tag -a cli-v1.0.1 -m "WOFO CLI 1.0.1"
+git tag -a cli-v1.0.1 -m "WOFOLogin 1.0.1"
 git push origin cli-v1.0.1
 ```
 

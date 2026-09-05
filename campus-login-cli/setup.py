@@ -4,9 +4,9 @@ from setuptools import setup
 
 
 setup(
-    name="campus-login-cli",
+    name="wofologin",
     version="1.0.1",
-    description="Cross-platform Dr.COM ePortal campus network CLI",
+    description="WOFOLogin cross-platform Dr.COM ePortal campus network CLI",
     long_description=Path(__file__).with_name("README.md").read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
     license="MIT",
@@ -18,5 +18,11 @@ setup(
         "Operating System :: MacOS",
         "Operating System :: POSIX :: Linux",
     ],
-    entry_points={"console_scripts": ["campus-login=campus_login_cli:main"]},
+    entry_points={
+        "console_scripts": [
+            "wofologin=campus_login_cli:main",
+            "WOFOLogin=campus_login_cli:main",
+            "campus-login=campus_login_cli:main",
+        ]
+    },
 )

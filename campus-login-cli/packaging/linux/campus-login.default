@@ -1,5 +1,5 @@
 # 安装后填写账号和密码，然后执行：
-# sudo systemctl enable --now campus-login
+# sudo systemctl enable --now wofologin
 CAMPUS_LOGIN_USER=""
 CAMPUS_LOGIN_PASSWORD=""
 CAMPUS_LOGIN_SERVICE="电信"

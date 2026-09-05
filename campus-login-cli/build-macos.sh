@@ -14,5 +14,5 @@ if ! command -v pyinstaller >/dev/null 2>&1; then
     exit 1
 fi
 
-pyinstaller --noconfirm --clean --onefile --name campus-login campus_login_cli.py
-echo "已生成: dist/campus-login"
+pyinstaller --noconfirm --clean --onefile --name wofologin campus_login_cli.py
+echo "已生成: dist/wofologin"

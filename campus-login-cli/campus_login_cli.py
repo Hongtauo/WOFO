@@ -18,7 +18,7 @@ import urllib.request
 from typing import Dict, Optional, Sequence, Tuple
 
 
-LOG = logging.getLogger("campus-login")
+LOG = logging.getLogger("WOFOLogin")
 SERVICES = ("电信", "移动", "联通", "校园网")
 PROBE_URLS = (
     "http://connect.rom.miui.com/generate_204",
@@ -284,7 +284,9 @@ def _run_daemon(client: PortalClient, args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Dr.COM ePortal 校园网命令行登录器")
+    parser = argparse.ArgumentParser(
+        prog="wofologin", description="WOFOLogin Dr.COM ePortal 校园网命令行登录器"
+    )
     parser.add_argument(
         "--portal", default=os.environ.get("CAMPUS_LOGIN_PORTAL", "http://10.10.9.4"),
         help="ePortal 根地址（默认: %(default)s）",

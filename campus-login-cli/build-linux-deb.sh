@@ -22,49 +22,54 @@ fi
 
 BUILD_ROOT=$(mktemp -d)
 trap 'rm -rf "$BUILD_ROOT"' EXIT HUP INT TERM
-PACKAGE_ROOT="$BUILD_ROOT/campus-login_${VERSION}_${DEB_ARCH}"
+PACKAGE_ROOT="$BUILD_ROOT/wofologin_${VERSION}_${DEB_ARCH}"
 PYINSTALLER_CONFIG_DIR="$BUILD_ROOT/pyinstaller-cache"
 export PYINSTALLER_CONFIG_DIR
 
 cd "$PROJECT_DIR"
 if [ "${SKIP_BINARY_BUILD:-0}" = "1" ]; then
-    if [ ! -x dist/campus-login ]; then
-        echo "SKIP_BINARY_BUILD=1，但 dist/campus-login 不存在或不可执行" >&2
+    if [ ! -x dist/wofologin ]; then
+        echo "SKIP_BINARY_BUILD=1，但 dist/wofologin 不存在或不可执行" >&2
         exit 1
     fi
 else
-    pyinstaller --noconfirm --clean --onefile --name campus-login campus_login_cli.py
+    pyinstaller --noconfirm --clean --onefile --name wofologin campus_login_cli.py
 fi
 
-install -D -m 0755 dist/campus-login "$PACKAGE_ROOT/usr/bin/campus-login"
+install -D -m 0755 dist/wofologin "$PACKAGE_ROOT/usr/bin/wofologin"
+ln -s wofologin "$PACKAGE_ROOT/usr/bin/WOFOLogin"
+ln -s wofologin "$PACKAGE_ROOT/usr/bin/campus-login"
 install -D -m 0644 packaging/linux/campus-login.service \
-    "$PACKAGE_ROOT/lib/systemd/system/campus-login.service"
+    "$PACKAGE_ROOT/lib/systemd/system/wofologin.service"
 install -D -m 0600 packaging/linux/campus-login.default \
-    "$PACKAGE_ROOT/etc/default/campus-login"
+    "$PACKAGE_ROOT/etc/default/wofologin"
 install -D -m 0644 README.md \
-    "$PACKAGE_ROOT/usr/share/doc/campus-login/README.md"
+    "$PACKAGE_ROOT/usr/share/doc/wofologin/README.md"
 install -d -m 0755 "$PACKAGE_ROOT/DEBIAN"
 install -m 0755 packaging/linux/postinst "$PACKAGE_ROOT/DEBIAN/postinst"
 install -m 0755 packaging/linux/prerm "$PACKAGE_ROOT/DEBIAN/prerm"
 install -m 0755 packaging/linux/postrm "$PACKAGE_ROOT/DEBIAN/postrm"
-printf '%s\n' '/etc/default/campus-login' > "$PACKAGE_ROOT/DEBIAN/conffiles"
+printf '%s\n' '/etc/default/wofologin' > "$PACKAGE_ROOT/DEBIAN/conffiles"
 
 INSTALLED_SIZE=$(du -sk "$PACKAGE_ROOT" | cut -f1)
 cat > "$PACKAGE_ROOT/DEBIAN/control" <<EOF
-Package: campus-login
+Package: wofologin
 Version: $VERSION
 Section: net
 Priority: optional
 Architecture: $DEB_ARCH
 Installed-Size: $INSTALLED_SIZE
-Maintainer: Campus Login Maintainers
-Description: Dr.COM ePortal campus network auto-login client
+Maintainer: WOFOLogin Maintainers
+Provides: campus-login
+Conflicts: campus-login
+Replaces: campus-login
+Description: WOFOLogin Dr.COM ePortal campus network client
  Standalone command-line client with connectivity checks, login, logout,
  and a systemd service for automatic reconnection.
 EOF
 
 mkdir -p "$PROJECT_DIR/dist"
-PACKAGE_FILE="$PROJECT_DIR/dist/campus-login_${VERSION}_${DEB_ARCH}.deb"
+PACKAGE_FILE="$PROJECT_DIR/dist/WOFOLogin_${VERSION}_${DEB_ARCH}.deb"
 
 # Ubuntu 24.04 默认使用 zstd，但 Jetson 上常见的旧版 dpkg/apt 无法读取
 # control.tar.zst。显式使用 xz，以兼容 Ubuntu 18.04/20.04 等较旧系统。
@@ -74,4 +79,4 @@ dpkg-deb -Zxz -z6 --root-owner-group --build "$PACKAGE_ROOT" "$PACKAGE_FILE"
 dpkg-deb --info "$PACKAGE_FILE" >/dev/null
 dpkg-deb --contents "$PACKAGE_FILE" >/dev/null
 
-echo "已生成并验证: dist/campus-login_${VERSION}_${DEB_ARCH}.deb"
+echo "已生成并验证: dist/WOFOLogin_${VERSION}_${DEB_ARCH}.deb"

@@ -1,4 +1,4 @@
-# WOFO我佛校园网守护工具
+# WOFOLogin 校园网守护工具
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -94,8 +94,8 @@ PyInstaller 不支持交叉编译：Windows `.exe`、macOS `.app` 和 Linux 可�
 ```bash
 python3 -m pip install pyinstaller
 cd campus-login-cli
-python3 -m PyInstaller --onefile --name campus-login campus_login_cli.py
-./dist/campus-login status
+python3 -m PyInstaller --onefile --name wofologin campus_login_cli.py
+./dist/wofologin status
 ```
 
 ### Windows GUI

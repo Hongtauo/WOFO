@@ -5,7 +5,8 @@ if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || true
 fi
 
-echo "campus-login 已安装。"
-echo "手动登录: campus-login login --user '学号'"
-echo "开机守护: 先编辑 /etc/default/campus-login，再执行:"
-echo "  sudo systemctl enable --now campus-login"
+echo "WOFOLogin 已安装。"
+echo "手动登录: wofologin login --user '学号'"
+echo "兼容命令: campus-login"
+echo "开机守护: 先编辑 /etc/default/wofologin，再执行:"
+echo "  sudo systemctl enable --now wofologin"

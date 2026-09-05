@@ -1,12 +1,12 @@
 [Unit]
-Description=Campus Network Auto Login
+Description=WOFOLogin Campus Network Auto Login
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile=/etc/default/campus-login
-ExecStart=/usr/bin/campus-login daemon
+EnvironmentFile=/etc/default/wofologin
+ExecStart=/usr/bin/wofologin daemon
 Restart=on-failure
 RestartSec=10
 DynamicUser=true
