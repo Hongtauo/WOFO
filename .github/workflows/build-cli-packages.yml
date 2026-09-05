@@ -6,6 +6,9 @@ on:
     tags:
       - "cli-v*"
 
+permissions:
+  contents: read
+
 jobs:
   linux-deb:
     strategy:
@@ -24,12 +27,26 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+      - name: Resolve package version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/cli-v* ]]; then
+            version="${GITHUB_REF_NAME#cli-v}"
+          else
+            version="0.0.0-dev"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - run: python -m pip install pyinstaller
-      - run: ./build-linux-deb.sh
+      - name: Build standalone binary and Debian package
+        run: VERSION="${{ steps.version.outputs.version }}" ./build-linux-deb.sh
       - uses: actions/upload-artifact@v4
         with:
           name: campus-login-${{ matrix.artifact }}
           path: campus-login-cli/dist/*.deb
+          if-no-files-found: error
 
   macos-binary:
     runs-on: macos-14
@@ -41,9 +58,51 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+      - name: Resolve package version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/cli-v* ]]; then
+            version="${GITHUB_REF_NAME#cli-v}"
+          else
+            version="0.0.0-dev"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - run: python -m pip install pyinstaller
       - run: ./build-macos.sh
+      - name: Add version and architecture to filename
+        run: mv dist/campus-login "dist/campus-login_${{ steps.version.outputs.version }}_macos_arm64"
       - uses: actions/upload-artifact@v4
         with:
           name: campus-login-macos-arm64
-          path: campus-login-cli/dist/campus-login
+          path: campus-login-cli/dist/campus-login_*_macos_arm64
+          if-no-files-found: error
+
+  github-release:
+    if: startsWith(github.ref, 'refs/tags/cli-v')
+    needs:
+      - linux-deb
+      - macos-binary
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download all platform packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: campus-login-*
+          path: release-assets
+          merge-multiple: true
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#cli-v}"
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "WOFO $version" \
+            --generate-notes \
+            --verify-tag

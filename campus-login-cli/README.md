@@ -118,6 +118,17 @@ python3 -m pip install pyinstaller
 仓库中的 `.github/workflows/build-cli-packages.yml` 可以在推送 `cli-v*` 标签或
 手动触发时构建 Linux AMD64、Linux ARM64 的 `.deb` 和 macOS ARM64 独立程序。
 
+推送版本标签后，Action 会在构建全部成功后自动创建 GitHub Release、
+生成更新说明并上传安装包：
+
+```bash
+git tag -a cli-v1.0.0 -m "WOFO CLI 1.0.0"
+git push origin cli-v1.0.0
+```
+
+直接点击 GitHub Actions 中的 **Run workflow** 只会验证构建并保存
+Artifacts，不会发布 Release，以避免误发版本。
+
 ## 许可与合规
 
 本项目采用 [MIT License](../LICENSE)。仅应用于用户已获授权使用的网络，
