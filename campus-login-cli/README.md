@@ -41,12 +41,15 @@ campus-login login --user '学号' --service '电信'
 发布的 `.deb` 已把 Python 运行时和程序一起封装，目标电脑不需要安装 Python：
 
 ```bash
-sudo apt install ./campus-login_1.0.0_amd64.deb
+sudo apt install ./campus-login_1.0.1_amd64.deb
 campus-login status
 campus-login login --user '学号' --service '电信'
 ```
 
-ARM64 Linux（例如部分开发板）使用 `campus-login_1.0.0_arm64.deb`。
+ARM64 Linux（例如 Jetson）使用 `campus-login_1.0.1_arm64.deb`。
+从 1.0.1 开始，Debian 包显式使用 xz 压缩，以兼容 Jetson 上常见的
+较旧 Ubuntu/dpkg 版本；Linux 独立程序也固定在 Ubuntu 20.04 环境中构建并
+执行启动测试，避免依赖 Ubuntu 24.04 的 `GLIBC_2.38`。
 
 配置开机启动和断线重连：
 
@@ -122,8 +125,8 @@ python3 -m pip install pyinstaller
 生成更新说明并上传安装包：
 
 ```bash
-git tag -a cli-v1.0.0 -m "WOFO CLI 1.0.0"
-git push origin cli-v1.0.0
+git tag -a cli-v1.0.1 -m "WOFO CLI 1.0.1"
+git push origin cli-v1.0.1
 ```
 
 直接点击 GitHub Actions 中的 **Run workflow** 只会验证构建并保存

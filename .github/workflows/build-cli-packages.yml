@@ -39,9 +39,32 @@ jobs:
             version="0.0.0-dev"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - run: python -m pip install pyinstaller
-      - name: Build standalone binary and Debian package
-        run: VERSION="${{ steps.version.outputs.version }}" ./build-linux-deb.sh
+      - name: Build Linux binary on the oldest supported userspace
+        working-directory: .
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" \
+            -w /src/campus-login-cli \
+            ubuntu:20.04 \
+            bash -euxo pipefail -c '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends python3 python3-pip
+              python3 -m pip install "pyinstaller==6.15.0"
+              python3 -m PyInstaller --noconfirm --clean --onefile \
+                --name campus-login campus_login_cli.py
+            '
+      - name: Verify binary on Ubuntu 20.04
+        working-directory: .
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src:ro" \
+            ubuntu:20.04 \
+            /src/campus-login-cli/dist/campus-login --help
+      - name: Build and validate Debian package
+        run: |
+          SKIP_BINARY_BUILD=1 VERSION="${{ steps.version.outputs.version }}" \
+            ./build-linux-deb.sh
       - uses: actions/upload-artifact@v4
         with:
           name: campus-login-${{ matrix.artifact }}

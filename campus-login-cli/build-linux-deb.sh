@@ -2,7 +2,7 @@
 set -eu
 
 PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-VERSION=${VERSION:-1.0.0}
+VERSION=${VERSION:-1.0.1}
 MACHINE=$(uname -m)
 case "$MACHINE" in
     x86_64) DEB_ARCH=amd64 ;;
@@ -10,12 +10,13 @@ case "$MACHINE" in
     *) echo "不支持的架构: $MACHINE" >&2; exit 1 ;;
 esac
 
-if ! command -v pyinstaller >/dev/null 2>&1; then
-    echo "构建机需要 PyInstaller: python3 -m pip install pyinstaller" >&2
-    exit 1
-fi
 if ! command -v dpkg-deb >/dev/null 2>&1; then
     echo "构建机缺少 dpkg-deb（Debian/Ubuntu 上安装 dpkg-dev）" >&2
+    exit 1
+fi
+
+if [ "${SKIP_BINARY_BUILD:-0}" != "1" ] && ! command -v pyinstaller >/dev/null 2>&1; then
+    echo "构建机需要 PyInstaller: python3 -m pip install pyinstaller" >&2
     exit 1
 fi
 
@@ -26,7 +27,14 @@ PYINSTALLER_CONFIG_DIR="$BUILD_ROOT/pyinstaller-cache"
 export PYINSTALLER_CONFIG_DIR
 
 cd "$PROJECT_DIR"
-pyinstaller --noconfirm --clean --onefile --name campus-login campus_login_cli.py
+if [ "${SKIP_BINARY_BUILD:-0}" = "1" ]; then
+    if [ ! -x dist/campus-login ]; then
+        echo "SKIP_BINARY_BUILD=1，但 dist/campus-login 不存在或不可执行" >&2
+        exit 1
+    fi
+else
+    pyinstaller --noconfirm --clean --onefile --name campus-login campus_login_cli.py
+fi
 
 install -D -m 0755 dist/campus-login "$PACKAGE_ROOT/usr/bin/campus-login"
 install -D -m 0644 packaging/linux/campus-login.service \
@@ -56,6 +64,14 @@ Description: Dr.COM ePortal campus network auto-login client
 EOF
 
 mkdir -p "$PROJECT_DIR/dist"
-dpkg-deb --root-owner-group --build "$PACKAGE_ROOT" \
-    "$PROJECT_DIR/dist/campus-login_${VERSION}_${DEB_ARCH}.deb"
-echo "已生成: dist/campus-login_${VERSION}_${DEB_ARCH}.deb"
+PACKAGE_FILE="$PROJECT_DIR/dist/campus-login_${VERSION}_${DEB_ARCH}.deb"
+
+# Ubuntu 24.04 默认使用 zstd，但 Jetson 上常见的旧版 dpkg/apt 无法读取
+# control.tar.zst。显式使用 xz，以兼容 Ubuntu 18.04/20.04 等较旧系统。
+dpkg-deb -Zxz -z6 --root-owner-group --build "$PACKAGE_ROOT" "$PACKAGE_FILE"
+
+# 发布前同时验证控制元数据和数据归档，损坏时立即使 Action 失败。
+dpkg-deb --info "$PACKAGE_FILE" >/dev/null
+dpkg-deb --contents "$PACKAGE_FILE" >/dev/null
+
+echo "已生成并验证: dist/campus-login_${VERSION}_${DEB_ARCH}.deb"
