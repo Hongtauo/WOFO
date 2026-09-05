@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*.egg-info/
+dist/
+build/
+*.build/
+*.dist/
+*.egg
+
+# 打包器生成的中间文件（可能包含构建机环境变量）
+nuitka-crash-report.xml
+campus-login-cli/campus-login.spec
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude
+.claude/
+.agents/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 本地配置（包含加密密钥和账号数据）
+# ~/.config/campus_login/

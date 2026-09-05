@@ -1,0 +1,6 @@
+# 安装后填写账号和密码，然后执行：
+# sudo systemctl enable --now campus-login
+CAMPUS_LOGIN_USER=""
+CAMPUS_LOGIN_PASSWORD=""
+CAMPUS_LOGIN_SERVICE="电信"
+CAMPUS_LOGIN_PORTAL="http://10.10.9.4"
