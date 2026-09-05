@@ -55,6 +55,7 @@ jobs:
               python3 -m pip install "pyinstaller==6.15.0"
               python3 -m PyInstaller --noconfirm --clean --onefile \
                 --name campus-login campus_login_cli.py
+              chown -R --reference=/src build dist campus-login.spec
             '
       - name: Verify binary on Ubuntu 20.04
         working-directory: .
