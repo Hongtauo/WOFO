@@ -1,4 +1,4 @@
-# 校园网自动登录器
+# WOFO我佛校园网守护工具
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
