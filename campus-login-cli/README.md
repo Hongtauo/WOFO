@@ -1,5 +1,7 @@
 # Campus Login CLI
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../LICENSE)
+
 面向 macOS 和 Linux 的独立 Dr.COM ePortal 命令行客户端。认证协议、RSA
 密码加密、联网检测和断线重连均只使用 Python 标准库，不依赖原项目的 GUI、
 数据库、Tk、托盘或 Windows API。
@@ -115,3 +117,8 @@ python3 -m pip install pyinstaller
 
 仓库中的 `.github/workflows/build-cli-packages.yml` 可以在推送 `cli-v*` 标签或
 手动触发时构建 Linux AMD64、Linux ARM64 的 `.deb` 和 macOS ARM64 独立程序。
+
+## 许可与合规
+
+本项目采用 [MIT License](../LICENSE)。仅应用于用户已获授权使用的网络，
+使用者需自行遵守学校和网络运营方的规章。

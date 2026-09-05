@@ -1,5 +1,7 @@
 # 校园网自动登录器
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 基于 Dr.COM ePortal 的校园网自动登录工具，支持账号管理、守护模式和系统托盘。
 
 ## 功能特性
@@ -170,3 +172,11 @@ pyinstaller campus_login.spec
 1. **打包后运行报错**：确保安装所有依赖后重新打包
 2. **图标不显示**：Windows exe 图标需要 .ico 格式文件
 3. **托盘功能异常**：可能是 pystray 打包问题，可尝试添加 `hiddenimports`
+
+## 合规与许可
+
+本项目仅用于在用户已获授权的校园网络中自动化正常登录。使用者应遵守
+所在学校、网络运营方的规章和适用法律，不得用于未授权访问、绕过认证
+或干扰网络服务。
+
+源代码采用 [MIT License](LICENSE) 开源，按“原样”提供，不承诺任何明示或默示担保。
