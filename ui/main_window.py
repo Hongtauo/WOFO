@@ -7,7 +7,7 @@ from pathlib import Path
 from config.settings import get_settings
 from database.db import get_db
 from ui.api import AppApi
-from ui.branding import APP_ID, APP_NAME, APP_TITLE, ICON_PATH
+from ui.branding import APP_ID, APP_NAME, APP_TITLE, ICON_PATH, ICON_PNG_PATH
 from ui.tray import TrayIcon
 
 log = logging.getLogger("campus_login.ui")
@@ -43,16 +43,29 @@ class MainWindow:
             on_login=self._tray_login, on_logout=self._tray_logout,
             on_show=self._show_window, on_quit=self._quit_app,
             on_toggle_daemon=self._toggle_daemon,
+            on_availability=self._tray_availability_changed,
         )
-        # WinForms 在此事件前已创建 native Form，事件同步运行在 GUI 线程，
-        # 因此可在第一次 Show() 之前设置标题栏和任务栏的图标。
+        # 此事件同步运行在 GUI 线程，原生窗口已创建但尚未显示。
         self.window.events.before_show += self._apply_native_icon
         self.window.events.closing += self._on_closing
         self.window.events.closed += self._cleanup
 
     @staticmethod
     def _set_application_id():
-        if platform.system() != "Windows":
+        system = platform.system()
+        if system == "Linux":
+            try:
+                import gi
+                gi.require_version("GLib", "2.0")
+                from gi.repository import GLib
+                # GTK 3 uses prgname for Wayland app_id. Match the installed
+                # wofo-login.desktop so the shell can find our launcher/icon.
+                GLib.set_prgname("wofo-login")
+                GLib.set_application_name(APP_NAME)
+            except Exception:
+                log.warning("无法设置 Linux 应用标识", exc_info=True)
+            return
+        if system != "Windows":
             return
         try:
             import ctypes
@@ -65,7 +78,18 @@ class MainWindow:
             log.warning("无法设置 Windows 应用标识", exc_info=True)
 
     def _apply_native_icon(self):
-        if platform.system() != "Windows":
+        system = platform.system()
+        if system == "Linux":
+            try:
+                native = self.window.native
+                if native is not None:
+                    native.set_icon_from_file(str(ICON_PNG_PATH))
+                    native.set_wmclass(APP_ID, APP_ID)
+                    native.set_title(APP_TITLE)
+            except Exception:
+                log.warning("无法设置 Linux 主窗口图标", exc_info=True)
+            return
+        if system != "Windows":
             return
         try:
             from System.Drawing import Icon
@@ -90,6 +114,14 @@ class MainWindow:
         self.api._start()
         if available and self._settings.get().start_minimized and not self._quitting and not self._cleaned:
             self.window.hide()
+
+    def _tray_availability_changed(self, available):
+        if self._cleaned or self._quitting:
+            return
+        self.api._set_tray_available(available)
+        if not available:
+            # GNOME 的托盘扩展可能被禁用或重启；此时应恢复窗口以保留退出入口。
+            self._show_window()
 
     def _update_tray(self, connected, active):
         self.tray.update_status(connected, active, self._settings.get().daemon_enabled)
@@ -157,11 +189,12 @@ class MainWindow:
 
     def run(self):
         try:
-            gui = "edgechromium" if platform.system() == "Windows" else None
+            system = platform.system()
+            gui = {"Windows": "edgechromium", "Linux": "gtk"}.get(system)
             import inspect
             options = {"gui": gui, "debug": False}
             if "icon" in inspect.signature(self._webview.start).parameters:
-                options["icon"] = str(ICON_PATH)
+                options["icon"] = str(ICON_PATH if system == "Windows" else ICON_PNG_PATH)
             self._webview.start(self._start_background, **options)
         finally:
             self._cleanup()

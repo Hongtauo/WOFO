@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+export PYSTRAY_BACKEND="${PYSTRAY_BACKEND:-appindicator}"
+exec /opt/wofo-login-gui/wofo-login-gui "$@"

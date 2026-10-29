@@ -13,3 +13,8 @@
 *.cmd text eol=crlf
 *.png binary
 *.ico binary
+*.spec text eol=lf
+*.desktop text eol=lf
+packaging/linux/postinst text eol=lf
+packaging/linux/postrm text eol=lf
+packaging/linux/wofo-login-gui text eol=lf

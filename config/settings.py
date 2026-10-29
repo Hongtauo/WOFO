@@ -220,10 +220,13 @@ class AutoStartManager:
 
     def _enable_linux(self) -> bool:
         try:
+            from ui.branding import APP_TITLE, ICON_PNG_PATH
             desktop_content = f"""[Desktop Entry]
 Type=Application
-Name={self._get_app_name()}
+Name={APP_TITLE}
 Exec={self._get_desktop_command()}
+Icon={ICON_PNG_PATH}
+Terminal=false
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true

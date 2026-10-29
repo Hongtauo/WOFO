@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=WOFO Login
+Name[zh_CN]=WOFO Login · 佛山大学校园网断线守护
+Comment=Foshan University campus network reconnect assistant
+Comment[zh_CN]=佛山大学校园网断线自动重连
+Exec=wofo-login-gui
+Icon=wofo-login
+Terminal=false
+Categories=Network;Utility;
+Keywords=campus;network;login;WOFO;
+StartupNotify=true
+StartupWMClass=WOFO.Login

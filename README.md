@@ -5,11 +5,12 @@
 # WOFO Login · 佛山大学校园网断线守护
 
 [![Windows build](https://github.com/Hongtauo/WOFO/actions/workflows/build-windows.yml/badge.svg)](https://github.com/Hongtauo/WOFO/actions/workflows/build-windows.yml)
+[![Ubuntu desktop build](https://github.com/Hongtauo/WOFO/actions/workflows/build-linux-gui.yml/badge.svg)](https://github.com/Hongtauo/WOFO/actions/workflows/build-linux-gui.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 一个面向 Dr.COM ePortal 的校园网连接工具。保存校园网账号后，WOFO Login 会在后台检测网络，并在断线时使用所选账号重新认证。
 
-Windows 桌面版使用本地 WebView2 界面；macOS / Linux 可使用仓库内独立的命令行版本。
+桌面版共用本地 WebView 界面：Windows 使用 WebView2，Ubuntu 22.04 使用 GTK 3 / WebKitGTK。macOS / Linux 另有独立的命令行版本。
 
 ## 功能
 
@@ -21,7 +22,7 @@ Windows 桌面版使用本地 WebView2 界面；macOS / Linux 可使用仓库内
 | 后台运行 | 系统托盘提供恢复窗口、连接、登出、暂停守护和退出入口 |
 | 运行日志 | 查看本次运行最近 500 条应用事件，支持清空 |
 | 启动偏好 | 开机自启、启动时收起到托盘、系统通知 |
-| 安装与卸载 | 支持便携运行、当前用户安装及卸载向导 |
+| 安装与卸载 | Windows 支持当前用户安装及卸载向导；Ubuntu 提供 `.deb` 和便携包 |
 
 主动登出会暂停自动重连；退出应用会保留所选账号与守护偏好。界面资源随程序本地加载，不需要 Node.js 或在线 CDN。
 
@@ -61,9 +62,45 @@ WOFO Login/
 
 卸载默认保留账号、密钥和设置。向导会单独询问是否删除这些数据。便携版卸载仅移除当前 EXE，不删除所在目录中的其他文件。
 
+## Ubuntu 22.04 图形界面版
+
+打开 [Ubuntu 桌面版构建记录](https://github.com/Hongtauo/WOFO/actions/workflows/build-linux-gui.yml)，选择成功的运行，下载 `WOFO-Login-Ubuntu-22.04-amd64` 构建产物。目标系统为 **Ubuntu 22.04 x86_64（amd64）**，需要桌面会话。
+
+解压下载的构建产物后，在该目录安装：
+
+```bash
+sudo apt install ./WOFO-Login_1.0.0_ubuntu22.04_amd64.deb
+wofo-login-gui
+```
+
+也可以从应用菜单打开「WOFO Login」。安装器会通过 Ubuntu 软件源安装 GTK、WebKitGTK 和 AppIndicator 运行库，无需自行安装 Python 或 Node.js。界面及账号操作与 Windows 版相同。
+
+Ubuntu 默认桌面的 AppIndicator 扩展可显示托盘；其他桌面需要相应的托盘支持。托盘不可用时，窗口会保持可见，关闭窗口直接退出。登录自启使用用户级 `.desktop` 文件，不会创建系统服务。
+
+### 便携运行与卸载
+
+便携包仍需要系统图形库：
+
+```bash
+sudo apt install libgtk-3-0 libwebkit2gtk-4.0-37 \
+  gir1.2-gtk-3.0 gir1.2-webkit2-4.0 gir1.2-ayatanaappindicator3-0.1 gir1.2-freedesktop \
+  libgirepository-1.0-1 libcairo2 libffi8 libsqlite3-0 libssl3 \
+  libbz2-1.0 liblzma5 libexpat1 zlib1g fonts-noto-cjk
+tar -xzf WOFO-Login_1.0.0_ubuntu22.04_amd64.tar.gz
+./WOFO-Login/run.sh
+```
+
+卸载 `.deb` 安装版时先退出程序，再运行：
+
+```bash
+sudo apt remove wofo-login-gui
+```
+
+卸载保留账号和设置。便携版退出后删除解压的程序目录即可。两个版本均使用下方的数据目录。
+
 ## 账号数据与隐私
 
-Windows 桌面版继续使用以下数据位置，更新程序无需迁移：
+Windows 与 Ubuntu 桌面版均使用用户主目录下的 `.config/campus_login/`，更新程序无需迁移：
 
 ```text
 %USERPROFILE%/.config/campus_login/
@@ -71,6 +108,8 @@ Windows 桌面版继续使用以下数据位置，更新程序无需迁移：
 ├── key.key
 └── settings.json
 ```
+
+Ubuntu 对应路径为 `~/.config/campus_login/`。
 
 - 密码使用 Fernet 加密；密钥也保存在本机，请妥善保管整个数据目录。
 - 页面状态不包含已保存的密码。编辑账号时，原密码不会回传到页面。
@@ -92,7 +131,7 @@ python3 campus_login_cli.py daemon --user '学号' --service '电信' --interval
 
 ## 从源码运行桌面版
 
-建议使用 Python 3.10+，Windows 构建流程使用 Python 3.11。
+建议使用 Python 3.10+，Windows 构建流程使用 Python 3.11，Ubuntu 22.04 使用系统 Python 3.10。
 
 ```powershell
 python -m venv .venv
@@ -100,7 +139,17 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-桌面版主要在 Windows 上验证。macOS / Linux 的桌面运行还需要相应的 WebKit / GTK 环境，详见 [pywebview 安装说明](https://pywebview.flowrl.com/guide/installation)。
+Ubuntu 22.04 从源码运行：
+
+```bash
+sudo apt install python3.10-venv python3-gi python3-gi-cairo python3-cairo \
+  gir1.2-gtk-3.0 gir1.2-webkit2-4.0 gir1.2-ayatanaappindicator3-0.1
+/usr/bin/python3.10 -m venv --system-site-packages .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python main.py
+```
+
+`--system-site-packages` 让虚拟环境能使用 Ubuntu 提供的 GI 绑定。其他 Linux 发行版及 macOS 桌面版尚未验证，依赖说明见 [pywebview 文档](https://pywebview.flowrl.com/guide/installation)。
 
 认证服务器和外网探测地址集中在 [`core/auth.py`](core/auth.py) 的 `CONFIG` 中。不同校园网络的认证配置可能不同；认证失败时，请先确认已接入相应网络以及账号、运营商选择正确。
 
@@ -120,6 +169,17 @@ node --check ui/web/app.js
 
 生成的程序为 `dist/webview/WOFO Login.exe`，完整包为 `dist/WOFO Login.zip`。打包脚本会核对嵌入的源码、页面资源、8 档尺寸图标和 Windows 版本信息，再加入安装、卸载脚本及使用说明。
 
+在 Ubuntu 22.04 上构建图形版：
+
+```bash
+sudo apt install python3.10-dev dpkg-dev desktop-file-utils libglib2.0-bin
+PYTHON="$PWD/.venv/bin/python" bash scripts/build-linux-gui.sh
+```
+
+输出位于 `dist/linux/`，包含 `.deb`、便携 `.tar.gz` 和 SHA-256 校验文件。Linux 包使用系统 GTK / WebKitGTK，避免捆绑与宿主桌面冲突的图形库。请在目标 Ubuntu 版本上构建，Windows 无法直接交叉生成该程序。
+
+Ubuntu 构建流程在 Xvfb 中启动真实 GTK 窗口，验证页面账号操作、设置、日志、图标和退出，再实际安装 `.deb` 并启动打包后的程序。截图和检查报告随构建产物提供。校园网认证仍需要在实际校园网络中验证。
+
 测试使用临时数据和模拟网络，不读取真实账号或执行实际安装、卸载。提交前还可以检查准确的 Git 暂存内容：
 
 ```powershell
@@ -135,9 +195,10 @@ database/           SQLite 账号存储
 config/             用户偏好与开机自启
 app_lifecycle.py    Windows 安装和卸载
 scripts/            图标生成、隐私检查、打包与校验
+packaging/linux/    Ubuntu 桌面入口、依赖和 PyInstaller hooks
 tests/              桌面版离线回归测试
 campus-login-cli/   macOS / Linux 独立命令行版
-.github/workflows/  Windows 和 CLI 构建流程
+.github/workflows/  Windows、Ubuntu 桌面版和 CLI 构建流程
 ```
 
 ## 许可证
