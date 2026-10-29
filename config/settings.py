@@ -5,9 +5,14 @@
 
 import json
 import logging
+import os
 import platform
+import plistlib
+import subprocess
 import sys
-from dataclasses import dataclass, field
+import tempfile
+import threading
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Optional
 
@@ -40,14 +45,19 @@ class Settings:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Settings":
-        return cls(
-            auto_start=data.get("auto_start", False),
-            start_minimized=data.get("start_minimized", False),
-            check_interval=data.get("check_interval", 30),
-            show_notifications=data.get("show_notifications", True),
-            theme=data.get("theme", "superhero"),
-            daemon_enabled=data.get("daemon_enabled", True),
-        )
+        defaults = cls()
+        if not isinstance(data, dict):
+            return defaults
+        values = defaults.to_dict()
+        for key, default in values.items():
+            value = data.get(key, default)
+            if isinstance(default, bool):
+                values[key] = value if isinstance(value, bool) else default
+            elif key == "check_interval":
+                values[key] = value if type(value) is int and 10 <= value <= 300 else default
+            elif key == "theme":
+                values[key] = value if isinstance(value, str) and value.strip() else default
+        return cls(**values)
 
 
 class AutoStartManager:
@@ -58,9 +68,27 @@ class AutoStartManager:
 
     def _get_app_path(self) -> str:
         """获取应用路径"""
-        if getattr(sys, 'frozen', False):
-            return sys.executable
         return sys.executable
+
+    def _get_app_args(self) -> list[str]:
+        """源码运行时同时指定入口文件，避免自启只打开 Python。"""
+        args = [self._get_app_path()]
+        if not getattr(sys, "frozen", False):
+            args.append(str(Path(__file__).resolve().parent.parent / "main.py"))
+        return args
+
+    def _get_desktop_command(self) -> str:
+        """按 Desktop Entry 的 Exec 规则转义每个参数。"""
+        quoted = []
+        for arg in self._get_app_args():
+            arg = arg.replace("%", "%%")
+            for char in ("\\", '"', "`", "$"):
+                arg = arg.replace(char, "\\" + char)
+            # Desktop Entry 先应用字符串转义，再应用 Exec 参数转义。
+            arg = arg.replace("\\", "\\\\")
+            arg = arg.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+            quoted.append('"' + arg + '"')
+        return " ".join(quoted)
 
     def _get_app_name(self) -> str:
         """获取应用名称"""
@@ -124,7 +152,8 @@ class AutoStartManager:
                 0,
                 winreg.KEY_WRITE
             )
-            winreg.SetValueEx(key, self._get_app_name(), 0, winreg.REG_SZ, self._get_app_path())
+            command = subprocess.list2cmdline(self._get_app_args())
+            winreg.SetValueEx(key, self._get_app_name(), 0, winreg.REG_SZ, command)
             winreg.CloseKey(key)
             log.info("已启用 Windows 开机自启")
             return True
@@ -159,23 +188,14 @@ class AutoStartManager:
 
     def _enable_macos(self) -> bool:
         try:
-            plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.campus.login</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{self._get_app_path()}</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-</dict>
-</plist>"""
+            plist_content = plistlib.dumps({
+                "Label": "com.campus.login",
+                "ProgramArguments": self._get_app_args(),
+                "RunAtLoad": True,
+            })
             plist_path = Path.home() / "Library" / "LaunchAgents"
             plist_path.mkdir(parents=True, exist_ok=True)
-            (plist_path / "com.campus.login.plist").write_text(plist_content)
+            (plist_path / "com.campus.login.plist").write_bytes(plist_content)
             log.info("已启用 macOS 开机自启")
             return True
         except Exception as e:
@@ -203,14 +223,14 @@ class AutoStartManager:
             desktop_content = f"""[Desktop Entry]
 Type=Application
 Name={self._get_app_name()}
-Exec={self._get_app_path()}
+Exec={self._get_desktop_command()}
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
 """
             autostart_path = Path.home() / ".config" / "autostart"
             autostart_path.mkdir(parents=True, exist_ok=True)
-            (autostart_path / "campus_login.desktop").write_text(desktop_content)
+            (autostart_path / "campus_login.desktop").write_text(desktop_content, encoding="utf-8")
             log.info("已启用 Linux 开机自启")
             return True
         except Exception as e:
@@ -232,62 +252,101 @@ X-GNOME-Autostart-enabled=true
 class SettingsManager:
     """设置管理器"""
 
-    def __init__(self):
+    def __init__(self, config_dir: Path = None, auto_start: AutoStartManager = None):
+        self.config_dir = Path(config_dir) if config_dir is not None else CONFIG_DIR
+        self.config_file = self.config_dir / "settings.json" if config_dir is not None else CONFIG_FILE
+        self._lock = threading.RLock()
         self.settings: Settings = Settings()
-        self.auto_start = AutoStartManager()
+        self.auto_start = auto_start if auto_start is not None else AutoStartManager()
         self._load()
 
     def _load(self):
         """加载设置"""
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        self.config_dir.mkdir(parents=True, exist_ok=True)
 
-        if CONFIG_FILE.exists():
+        if self.config_file.exists():
             try:
-                data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+                data = json.loads(self.config_file.read_text(encoding="utf-8"))
                 self.settings = Settings.from_dict(data)
-                # 同步自启状态
-                self.settings.auto_start = self.auto_start.is_enabled()
             except Exception as e:
                 log.error(f"加载设置失败: {e}")
+        self.settings.auto_start = self.auto_start.is_enabled()
+
+    @staticmethod
+    def _validate(values: dict):
+        defaults = Settings().to_dict()
+        for key, value in values.items():
+            if key not in defaults:
+                raise ValueError(f"未知设置: {key}")
+            if isinstance(defaults[key], bool) and not isinstance(value, bool):
+                raise ValueError(f"{key} 必须为布尔值")
+            if key == "check_interval" and not (type(value) is int and 10 <= value <= 300):
+                raise ValueError("检测间隔必须为 10 到 300 之间的整数")
+            if key == "theme" and (not isinstance(value, str) or not value.strip()):
+                raise ValueError("主题必须为非空字符串")
+
+    def _write_settings(self, settings: Settings):
+        """在同目录写临时文件后替换，避免保存中断破坏原配置。"""
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=self.config_dir,
+                prefix=".settings-", suffix=".tmp", delete=False,
+            ) as stream:
+                temporary = Path(stream.name)
+                json.dump(settings.to_dict(), stream, indent=2, ensure_ascii=False)
+                stream.flush()
+                os.fsync(stream.fileno())
+            temporary.replace(self.config_file)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     def save(self):
         """保存设置"""
-        try:
-            CONFIG_FILE.write_text(
-                json.dumps(self.settings.to_dict(), indent=2, ensure_ascii=False),
-                encoding="utf-8"
-            )
-        except Exception as e:
-            log.error(f"保存设置失败: {e}")
+        with self._lock:
+            self._validate(self.settings.to_dict())
+            self._write_settings(self.settings)
 
     def update(self, **kwargs):
         """更新设置"""
-        for key, value in kwargs.items():
-            if hasattr(self.settings, key):
-                old_value = getattr(self.settings, key)
-                setattr(self.settings, key, value)
-
-                # 同步自启设置
-                if key == "auto_start":
-                    if value:
-                        self.auto_start.enable()
-                    else:
-                        self.auto_start.disable()
-
-        self.save()
+        with self._lock:
+            self._validate(kwargs)
+            candidate = replace(self.settings, **kwargs)
+            previous_auto_start = self.auto_start.is_enabled()
+            change_auto_start = (
+                "auto_start" in kwargs and candidate.auto_start != previous_auto_start
+            )
+            if change_auto_start:
+                action = self.auto_start.enable if candidate.auto_start else self.auto_start.disable
+                if not action():
+                    raise OSError("无法更新开机自启设置")
+            try:
+                self._write_settings(candidate)
+            except OSError:
+                if change_auto_start:
+                    rollback = self.auto_start.enable if previous_auto_start else self.auto_start.disable
+                    if not rollback():
+                        log.error("配置保存失败后，恢复开机自启状态失败")
+                raise
+            self.settings = candidate
 
     def get(self) -> Settings:
         """获取设置"""
-        return self.settings
+        with self._lock:
+            return self.settings
 
 
 # 全局设置实例
 _settings: Optional[SettingsManager] = None
+_settings_lock = threading.Lock()
 
 
 def get_settings() -> SettingsManager:
     """获取设置管理器（单例）"""
     global _settings
-    if _settings is None:
-        _settings = SettingsManager()
-    return _settings
+    with _settings_lock:
+        if _settings is None:
+            _settings = SettingsManager()
+        return _settings

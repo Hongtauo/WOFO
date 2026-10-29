@@ -5,6 +5,7 @@ SQLite 存储账号信息，密码加密
 
 import logging
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -23,7 +24,7 @@ class Account:
     """账号数据结构"""
     id: Optional[int]
     user_id: str
-    password: str  # 解密后的密码
+    password: Optional[str]  # 解密后的密码；无法解密时为 None
     service: str
     is_default: bool
     created_at: str
@@ -34,8 +35,9 @@ class Database:
     """数据库管理器"""
 
     def __init__(self, db_path: Path = None):
-        self.db_path = db_path or DB_PATH
+        self.db_path = Path(db_path) if db_path is not None else DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
         self._conn: Optional[sqlite3.Connection] = None
         self._initialize()
 
@@ -58,99 +60,103 @@ class Database:
 
     def add_account(self, user_id: str, password: str, service: str = "电信", set_default: bool = False) -> bool:
         """添加账号"""
-        crypto = get_crypto()
-        encrypted_password = crypto.encrypt(password)
-
-        # 如果设为默认，先取消其他默认
-        if set_default:
-            self._conn.execute("UPDATE accounts SET is_default = 0")
-
-        try:
-            self._conn.execute(
-                """INSERT INTO accounts (user_id, encrypted_password, service, is_default, created_at)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (user_id, encrypted_password, service, 1 if set_default else 0, datetime.now().isoformat())
-            )
-            self._conn.commit()
-            return True
-        except sqlite3.IntegrityError:
-            return False
+        with self._lock:
+            encrypted_password = get_crypto().encrypt(password)
+            try:
+                # 默认标记和账号写入必须一起提交，失败时一起回滚。
+                with self._conn:
+                    if set_default:
+                        self._conn.execute("UPDATE accounts SET is_default = 0")
+                    self._conn.execute(
+                        """INSERT INTO accounts (user_id, encrypted_password, service, is_default, created_at)
+                           VALUES (?, ?, ?, ?, ?)""",
+                        (user_id, encrypted_password, service, 1 if set_default else 0,
+                         datetime.now().isoformat())
+                    )
+                return True
+            except sqlite3.IntegrityError:
+                return False
 
     def update_account(self, account_id: int, user_id: str = None, password: str = None,
                        service: str = None, is_default: bool = None) -> bool:
         """更新账号"""
-        updates = []
-        params = []
-
-        if user_id is not None:
-            updates.append("user_id = ?")
-            params.append(user_id)
-
-        if password is not None:
-            crypto = get_crypto()
-            encrypted_password = crypto.encrypt(password)
-            updates.append("encrypted_password = ?")
-            params.append(encrypted_password)
-
-        if service is not None:
-            updates.append("service = ?")
-            params.append(service)
-
-        if is_default is not None:
-            updates.append("is_default = ?")
-            params.append(1 if is_default else 0)
-            if is_default:
-                self._conn.execute("UPDATE accounts SET is_default = 0")
-
-        if not updates:
-            return False
-
-        params.append(account_id)
-        self._conn.execute(
-            f"UPDATE accounts SET {', '.join(updates)} WHERE id = ?",
-            params
-        )
-        self._conn.commit()
-        return self._conn.total_changes > 0
+        with self._lock:
+            updates = []
+            params = []
+            if user_id is not None:
+                updates.append("user_id = ?")
+                params.append(user_id)
+            if password is not None:
+                updates.append("encrypted_password = ?")
+                params.append(get_crypto().encrypt(password))
+            if service is not None:
+                updates.append("service = ?")
+                params.append(service)
+            if is_default is not None:
+                updates.append("is_default = ?")
+                params.append(1 if is_default else 0)
+            if not updates:
+                return False
+            try:
+                with self._conn:
+                    if not self._conn.execute(
+                        "SELECT 1 FROM accounts WHERE id = ?", (account_id,)
+                    ).fetchone():
+                        return False
+                    if is_default:
+                        self._conn.execute("UPDATE accounts SET is_default = 0")
+                    params.append(account_id)
+                    cursor = self._conn.execute(
+                        f"UPDATE accounts SET {', '.join(updates)} WHERE id = ?", params
+                    )
+                return cursor.rowcount > 0
+            except sqlite3.IntegrityError:
+                return False
 
     def delete_account(self, account_id: int) -> bool:
         """删除账号"""
-        self._conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
-        self._conn.commit()
-        return self._conn.total_changes > 0
+        with self._lock, self._conn:
+            cursor = self._conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+            return cursor.rowcount > 0
 
     def get_account(self, account_id: int) -> Optional[Account]:
         """获取单个账号"""
-        row = self._conn.execute(
-            "SELECT * FROM accounts WHERE id = ?", (account_id,)
-        ).fetchone()
-        return self._row_to_account(row) if row else None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM accounts WHERE id = ?", (account_id,)
+            ).fetchone()
+            return self._row_to_account(row) if row else None
 
     def get_all_accounts(self) -> list[Account]:
         """获取所有账号"""
-        rows = self._conn.execute("SELECT * FROM accounts ORDER BY created_at DESC").fetchall()
-        return [self._row_to_account(row) for row in rows]
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM accounts ORDER BY created_at DESC").fetchall()
+            return [self._row_to_account(row) for row in rows]
 
     def get_default_account(self) -> Optional[Account]:
         """获取默认账号"""
-        row = self._conn.execute(
-            "SELECT * FROM accounts WHERE is_default = 1 LIMIT 1"
-        ).fetchone()
-
-        # 如果没有默认账号，返回第一个
-        if not row:
+        with self._lock:
             row = self._conn.execute(
-                "SELECT * FROM accounts ORDER BY created_at DESC LIMIT 1"
+                "SELECT * FROM accounts WHERE is_default = 1 LIMIT 1"
             ).fetchone()
-
-        return self._row_to_account(row) if row else None
+            if not row:
+                row = self._conn.execute(
+                    "SELECT * FROM accounts ORDER BY created_at DESC LIMIT 1"
+                ).fetchone()
+            return self._row_to_account(row) if row else None
 
     def set_default(self, account_id: int) -> bool:
         """设为默认账号"""
-        self._conn.execute("UPDATE accounts SET is_default = 0")
-        self._conn.execute("UPDATE accounts SET is_default = 1 WHERE id = ?", (account_id,))
-        self._conn.commit()
-        return self._conn.total_changes > 0
+        with self._lock, self._conn:
+            if not self._conn.execute(
+                "SELECT 1 FROM accounts WHERE id = ?", (account_id,)
+            ).fetchone():
+                return False
+            self._conn.execute("UPDATE accounts SET is_default = 0")
+            cursor = self._conn.execute(
+                "UPDATE accounts SET is_default = 1 WHERE id = ?", (account_id,)
+            )
+            return cursor.rowcount > 0
 
     def _row_to_account(self, row: sqlite3.Row) -> Optional[Account]:
         """将数据库行转换为 Account 对象"""
@@ -178,18 +184,21 @@ class Database:
 
     def close(self):
         """关闭数据库连接"""
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        with self._lock:
+            if self._conn:
+                self._conn.close()
+                self._conn = None
 
 
 # 全局数据库实例
 _db: Optional[Database] = None
+_db_lock = threading.Lock()
 
 
 def get_db() -> Database:
     """获取数据库实例（单例）"""
     global _db
-    if _db is None:
-        _db = Database()
-    return _db
+    with _db_lock:
+        if _db is None:
+            _db = Database()
+        return _db

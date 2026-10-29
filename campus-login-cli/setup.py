@@ -6,7 +6,7 @@ from setuptools import setup
 setup(
     name="wofologin",
     version="1.0.1",
-    description="WOFOLogin cross-platform Dr.COM ePortal campus network CLI",
+    description="WOFO Login CLI · 佛山大学校园网断线守护",
     long_description=Path(__file__).with_name("README.md").read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
     license="MIT",

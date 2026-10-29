@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">WOFO Login</title>
+  <desc id="desc">深色圆角底上的 Wi-Fi 信号与开放式重连箭头，代表校园网断线重连。</desc>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="#111d27"/>
+  <rect x="9" y="9" width="238" height="238" rx="55" fill="none" stroke="#304347" stroke-width="2"/>
+  <path d="M195.41 71.43A88 88 0 1 1 128 40" fill="none" stroke="#69e4c0" stroke-width="14" stroke-linecap="round"/>
+  <path d="M152 40 125 24 125 56Z" fill="#7ec4ff"/>
+  <g fill="none" stroke="#dbfff3" stroke-width="13" stroke-linecap="round">
+    <path d="M88.17 124.58A52 52 0 0 1 167.83 124.58"/>
+    <path d="M105.02 138.72A30 30 0 0 1 150.98 138.72"/>
+  </g>
+  <circle cx="128" cy="161" r="9" fill="#69e4c0"/>
+</svg>

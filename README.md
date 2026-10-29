@@ -1,182 +1,145 @@
-# WOFOLogin 校园网守护工具
+<div align="center">
+  <img src="ui/assets/wofo-login.svg" width="96" alt="WOFO Login 图标">
+</div>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+# WOFO Login · 佛山大学校园网断线守护
 
-基于 Dr.COM ePortal 的校园网自动登录工具，支持账号管理、守护模式和系统托盘。
+[![Windows build](https://github.com/Hongtauo/WOFO/actions/workflows/build-windows.yml/badge.svg)](https://github.com/Hongtauo/WOFO/actions/workflows/build-windows.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## 功能特性
+一个面向 Dr.COM ePortal 的校园网连接工具。保存校园网账号后，WOFO Login 会在后台检测网络，并在断线时使用所选账号重新认证。
 
-- 账号管理：添加、编辑、删除、设置默认账号
-- 密码加密存储：使用 Fernet 对称加密
-- 守护模式：断线自动重连
-- 系统托盘：最小化后台运行，支持双击打开
-- 开机自启：支持 Windows/macOS/Linux
-- 跨平台支持
+Windows 桌面版使用本地 WebView2 界面；macOS / Linux 可使用仓库内独立的命令行版本。
 
-## 安装
+## 功能
 
-```bash
-pip install -r requirements.txt
+| 功能 | 说明 |
+| --- | --- |
+| 断线重连 | 检测间隔可设为 10～300 秒，使用所选校园网账号重新登录 |
+| 账号管理 | 最多保存 5 个账号，可添加、编辑、删除，选择会在重启后保留 |
+| 运营商选择 | 电信、移动、联通、校园网 |
+| 后台运行 | 系统托盘提供恢复窗口、连接、登出、暂停守护和退出入口 |
+| 运行日志 | 查看本次运行最近 500 条应用事件，支持清空 |
+| 启动偏好 | 开机自启、启动时收起到托盘、系统通知 |
+| 安装与卸载 | 支持便携运行、当前用户安装及卸载向导 |
+
+主动登出会暂停自动重连；退出应用会保留所选账号与守护偏好。界面资源随程序本地加载，不需要 Node.js 或在线 CDN。
+
+## Windows 快速开始
+
+### 获取程序
+
+打开 [Windows 构建记录](https://github.com/Hongtauo/WOFO/actions/workflows/build-windows.yml)，选择成功的运行，下载 `WOFO-Login-Windows` 构建产物。解压其中的 `WOFO Login.zip` 后会得到：
+
+```text
+WOFO Login/
+├── WOFO Login.exe
+├── 安装.cmd
+├── 卸载.cmd
+└── 使用说明.txt
 ```
 
-依赖：
-- `cryptography` - 密码加密
-- `ttkbootstrap` - UI 界面
-- `pystray` - 系统托盘
-- `Pillow` - 托盘图标
+直接运行 `WOFO Login.exe` 即可。程序需要 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)；如果启动提示缺少运行时，请先安装它。
 
-## macOS / Linux（核心版）
+`安装.cmd` 是可选的：它会把程序安装到当前用户的 `%LOCALAPPDATA%/Programs/WOFO Login/`，创建桌面和开始菜单快捷方式，并添加 Windows「已安装的应用」入口，无需管理员权限。
 
-独立的纯命令行项目位于 [`campus-login-cli/`](campus-login-cli/README.md)。
-它不导入本项目的 GUI、数据库或托盘代码，仅依赖 Python 3.9+
-标准库，可以整个目录单独复制到 macOS 或 Linux。
+### 配置连接
+
+1. 连接校园网有线网络或 Wi-Fi。
+2. 点击「添加账号」，填写校园网账号、密码和运营商。
+3. 在账号列表中选择一个账号进行断线守护。
+4. 点击「连接校园网」立即认证，或开启「断线守护」等待自动检测和重连。
+5. 在「运行日志」中查看连接结果，在「偏好设置」中调整检测间隔和启动方式。
+
+首次添加的账号会自动选中。编辑时密码留空可以保留原密码；账号达到 5 个后，需要先删除一个才能继续添加。
+
+关闭窗口会收起到可用的系统托盘。要完全结束程序，请使用侧栏或托盘菜单中的「退出」。托盘不可用时，关闭窗口会直接退出。
+
+### 卸载
+
+在「偏好设置」中点击「卸载 WOFO Login」即可打开卸载向导。也可先从托盘退出主程序，再运行 `卸载.cmd`；安装版还支持从 Windows「已安装的应用」或开始菜单卸载。
+
+卸载默认保留账号、密钥和设置。向导会单独询问是否删除这些数据。便携版卸载仅移除当前 EXE，不删除所在目录中的其他文件。
+
+## 账号数据与隐私
+
+Windows 桌面版继续使用以下数据位置，更新程序无需迁移：
+
+```text
+%USERPROFILE%/.config/campus_login/
+├── accounts.db
+├── key.key
+└── settings.json
+```
+
+- 密码使用 Fernet 加密；密钥也保存在本机，请妥善保管整个数据目录。
+- 页面状态不包含已保存的密码。编辑账号时，原密码不会回传到页面。
+- 日志记录应用操作和连接结果，不展示密码及原始认证报文，关闭程序后清空。
+- 源码仓库不包含真实账号、加密密钥、个人配置、构建缓存或本机诊断报告。
+
+## macOS / Linux 命令行版
+
+独立项目位于 [`campus-login-cli/`](campus-login-cli/README.md)，使用 Python 3.9+ 标准库，不依赖桌面界面、数据库或托盘。
 
 ```bash
 cd campus-login-cli
-python3 campus_login_cli.py login --user "学号" --service "电信"
+python3 campus_login_cli.py status
+python3 campus_login_cli.py login --user '学号' --service '电信'
+python3 campus_login_cli.py daemon --user '学号' --service '电信' --interval 30
 ```
 
-## 图形界面
+程序会交互提示输入密码。安装包、服务配置和卸载说明见 [CLI 文档](campus-login-cli/README.md)，已有平台发布包见 [Releases](https://github.com/Hongtauo/WOFO/releases)。
 
-```bash
-pip install -r requirements.txt
-python main.py
+## 从源码运行桌面版
+
+建议使用 Python 3.10+，Windows 构建流程使用 Python 3.11。
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe main.py
 ```
 
-## 项目结构
+桌面版主要在 Windows 上验证。macOS / Linux 的桌面运行还需要相应的 WebKit / GTK 环境，详见 [pywebview 安装说明](https://pywebview.flowrl.com/guide/installation)。
 
-```
-校园网自动登录/
-├── campus-login-cli/   # macOS/Linux 独立纯命令行版
-├── core/               # 核心逻辑
-│   ├── auth.py         # 登录/登出/守护模式
-│   └── crypto.py       # 密码加密
-├── database/
-│   └── db.py           # SQLite 数据库
-├── config/
-│   └── settings.py     # 设置与开机自启
-├── ui/
-│   ├── main_window.py  # 主界面
-│   └── tray.py         # 系统托盘
-├── requirements.txt
-└── main.py             # 入口
-```
+认证服务器和外网探测地址集中在 [`core/auth.py`](core/auth.py) 的 `CONFIG` 中。不同校园网络的认证配置可能不同；认证失败时，请先确认已接入相应网络以及账号、运营商选择正确。
 
-## 数据存储
+## 开发与构建
 
-配置和数据存储在 `~/.config/campus_login/` 目录下：
-- `accounts.db` - 加密的账号数据库
-- `key.key` - 加密密钥
-- `settings.json` - 用户设置
+```powershell
+# 隐私检查、回归测试与前端语法检查
+.\.venv\Scripts\python.exe scripts/check_publication.py
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m unittest discover -s campus-login-cli/tests -v
+node --check ui/web/app.js
 
-## 使用说明
-
-1. 首次运行，点击「添加」添加校园网账号
-2. 选择运营商（电信/移动/联通/校园网）
-3. 点击「登录」或勾选「设为默认账号」
-4. 开启「守护模式」可实现断线自动重连
-5. 关闭窗口会最小化到系统托盘
-6. 在设置中可开启「开机自动启动」
-
-## 界面预览
-
-- 深色主题（superhero）
-- 状态指示灯（绿色=已连接，红色=未连接，绿色+循环=守护模式）
-- 系统托盘图标
-
-## 打包
-
-PyInstaller 不支持交叉编译：Windows `.exe`、macOS `.app` 和 Linux 可执行文件
-必须分别在对应系统上构建。
-
-### macOS / Linux 核心命令行版
-
-```bash
-python3 -m pip install pyinstaller
-cd campus-login-cli
-python3 -m PyInstaller --onefile --name wofologin campus_login_cli.py
-./dist/wofologin status
+# Windows EXE 与完整发布包
+.\.venv\Scripts\python.exe -m PyInstaller --noconfirm --distpath dist/webview "校园网守护.spec"
+.\.venv\Scripts\python.exe scripts/package_release.py
 ```
 
-### Windows GUI
+生成的程序为 `dist/webview/WOFO Login.exe`，完整包为 `dist/WOFO Login.zip`。打包脚本会核对嵌入的源码、页面资源、8 档尺寸图标和 Windows 版本信息，再加入安装、卸载脚本及使用说明。
 
-### 方式一：命令行打包
+测试使用临时数据和模拟网络，不读取真实账号或执行实际安装、卸载。提交前还可以检查准确的 Git 暂存内容：
 
-```bash
-pyinstaller --onefile --windowed --name "校园网自动登录" main.py
+```powershell
+.\.venv\Scripts\python.exe scripts/check_publication.py --staged
 ```
 
-参数说明：
-- `--onefile`：打包为单个 exe 文件
-- `--windowed`：无控制台窗口（GUI 模式）
-- `--name`：输出文件名
+主要目录：
 
-打包完成后，exe 文件在 `dist/` 目录下。
-
-### 方式二：使用 spec 文件（推荐）
-
-创建 `campus_login.spec` 文件：
-
-```python
-# -*- mode: python ; coding: utf-8 -*-
-
-block_cipher = None
-
-a = Analysis(
-    ['main.py'],
-    pathex=[],
-    binaries=[],
-    datas=[],
-    hiddenimports=['cryptography', 'tkinter', 'pystray', 'PIL'],
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
-    noarchive=False,
-)
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
-    name='校园网自动登录',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-)
+```text
+ui/                 WebView 界面、应用桥接、托盘和图标
+core/               校园网认证与密码加密
+database/           SQLite 账号存储
+config/             用户偏好与开机自启
+app_lifecycle.py    Windows 安装和卸载
+scripts/            图标生成、隐私检查、打包与校验
+tests/              桌面版离线回归测试
+campus-login-cli/   macOS / Linux 独立命令行版
+.github/workflows/  Windows 和 CLI 构建流程
 ```
 
-然后运行：
+## 许可证
 
-```bash
-pyinstaller campus_login.spec
-```
-
-### 常见问题
-
-1. **打包后运行报错**：确保安装所有依赖后重新打包
-2. **图标不显示**：Windows exe 图标需要 .ico 格式文件
-3. **托盘功能异常**：可能是 pystray 打包问题，可尝试添加 `hiddenimports`
-
-## 合规与许可
-
-本项目仅用于在用户已获授权的校园网络中自动化正常登录。使用者应遵守
-所在学校、网络运营方的规章和适用法律，不得用于未授权访问、绕过认证
-或干扰网络服务。
-
-源代码采用 [MIT License](LICENSE) 开源，按“原样”提供，不承诺任何明示或默示担保。
+本项目采用 [MIT License](LICENSE)。请仅使用本人已获授权的账号进行正常校园网认证。

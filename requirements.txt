@@ -1,5 +1,5 @@
 cryptography>=41.0.0
-ttkbootstrap>=1.10.0
+pywebview>=5.4,<7
 pystray>=0.19.5
 Pillow>=10.0.0
 pyinstaller>=6.0.0

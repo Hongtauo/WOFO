@@ -1,210 +1,112 @@
-"""
-系统托盘模块
-跨平台托盘图标和右键菜单
-"""
+"""与 GUI 框架无关的系统托盘，不重启图标即可刷新状态。"""
 
 import logging
-from typing import Callable
+import threading
 
-import ttkbootstrap as ttk
-from ttkbootstrap.constants import *
+from ui.branding import APP_ID, APP_NAME, ICON_PNG_PATH
 
 log = logging.getLogger("campus_login.tray")
 
 
 class TrayIcon:
-    """系统托盘图标管理器"""
+    def __init__(self, on_login=None, on_logout=None, on_show=None,
+                 on_quit=None, on_toggle_daemon=None):
+        self._callbacks = dict(login=on_login, logout=on_logout, show=on_show,
+                               quit=on_quit, daemon=on_toggle_daemon)
+        self._tray = self._thread = None
+        self._ready, self._stopped = threading.Event(), threading.Event()
+        self._lock = threading.RLock()
+        self._connected = self._daemon_running = self._daemon_enabled = self.available = False
 
-    def __init__(self, parent: ttk.Window, on_login: Callable = None,
-                 on_logout: Callable = None, on_show: Callable = None,
-                 on_quit: Callable = None, on_toggle_daemon: Callable = None):
-        self.parent = parent
-        self.on_login = on_login
-        self.on_logout = on_logout
-        self.on_show = on_show
-        self.on_quit = on_quit
-        self.on_toggle_daemon = on_toggle_daemon
+    def _callback(self, name):
+        def handle(icon, item):
+            callback = self._callbacks.get(name)
+            if callback:
+                threading.Thread(target=callback, daemon=True).start()
+        return handle
 
-        self._tray = None
-        self._connected = False
-        self._daemon_running = False
-        self._available = True
+    def _image(self):
+        from PIL import Image, ImageDraw
+        with Image.open(ICON_PNG_PATH) as source:
+            image = source.convert("RGBA").resize((64, 64), Image.Resampling.LANCZOS)
+        draw = ImageDraw.Draw(image)
+        color = "#69e4c0" if self._connected else "#e4ac69"
+        # 同一品牌图标，右下角状态点：绿=连接，橙=离线；白色内点=守护中。
+        draw.ellipse((44, 44, 62, 62), fill=color, outline="#111d27", width=3)
+        if self._daemon_running:
+            draw.ellipse((51, 51, 55, 55), fill="#ffffff")
+        return image
 
-        # 尝试导入 pystray
-        try:
-            import pystray
-            from pystray import MenuItem
-            self._pystray = pystray
-            self._MenuItem = MenuItem
-            self._use_pystray = True
-        except ImportError as e:
-            log.warning(f"托盘功能不可用: {e}")
-            self._use_pystray = False
-            self._available = False
-
-    def _create_icon_image(self, daemon_running: bool = False):
-        """创建托盘图标图像"""
-        import PIL.Image
-        import PIL.ImageDraw
-
-        # 根据状态选择颜色
-        if daemon_running:
-            color = '#4CAF50'  # 绿色 - 守护运行中
-        elif self._connected:
-            color = '#2196F3'  # 蓝色 - 已连接
-        else:
-            color = '#F44336'  # 红色 - 未连接
-
-        img = PIL.Image.new('RGBA', (64, 64), (255, 255, 255, 0))
-        draw = PIL.ImageDraw.Draw(img)
-
-        # 画圆形
-        draw.ellipse([4, 4, 60, 60], fill=color)
-
-        # 添加网络图标样式
-        if daemon_running:
-            # 守护模式：在圆中画一个循环箭头
-            draw.ellipse([22, 22, 42, 42], fill='white')
-        elif self._connected:
-            # 已连接：画一个对勾
-            draw.line([24, 32, 30, 38], fill='white', width=3)
-            draw.line([30, 38, 42, 24], fill='white', width=3)
-
-        return img
-
-    def _setup_pystray(self):
-        """设置 pystray 托盘"""
-        if not self._use_pystray:
-            return
-
-        img = self._create_icon_image(self._daemon_running)
-
-        # 构建菜单文本
-        daemon_text = "关闭守护" if self._daemon_running else "启用守护"
-
-        menu = self._pystray.Menu(
-            self._MenuItem("显示主窗口", self._handle_show),
-            self._pystray.Menu.SEPARATOR,
-            self._MenuItem("快速登录", self._handle_login),
-            self._MenuItem("登出", self._handle_logout),
-            self._pystray.Menu.SEPARATOR,
-            self._MenuItem(daemon_text, self._handle_toggle_daemon),
-            self._pystray.Menu.SEPARATOR,
-            self._MenuItem("退出", self._handle_quit)
-        )
-
-        self._tray = self._pystray.Icon(
-            "campus_login",
-            img,
-            "校园网自动登录",
-            menu
-        )
-
-        # 设置双击事件
-        self._tray.on_double_click = self._handle_show
-
-    def _handle_show(self, icon=None, item=None):
-        """显示主窗口"""
-        if self.on_show:
-            self.on_show()
-        self.hide()
-
-    def _handle_login(self, icon=None, item=None):
-        """快速登录"""
-        if self.on_login:
-            self.on_login()
-
-    def _handle_logout(self, icon=None, item=None):
-        """登出"""
-        if self.on_logout:
-            self.on_logout()
-
-    def _handle_toggle_daemon(self, icon=None, item=None):
-        """切换守护"""
-        if self.on_toggle_daemon:
-            self.on_toggle_daemon()
-
-    def _handle_quit(self, icon=None, item=None):
-        """退出程序"""
-        if self.on_quit:
-            self.on_quit()
-        self.hide()
-
-    def show(self):
-        """显示托盘图标"""
-        if self._tray:
+    def start(self):
+        with self._lock:
+            if self._thread:
+                return self.available
             try:
-                if hasattr(self._tray, 'visible') and self._tray.visible:
-                    return
-                import threading
-                self._tray_thread = threading.Thread(target=self._run_tray, daemon=True)
-                self._tray_thread.start()
-            except Exception as e:
-                log.error(f"托盘启动失败: {e}")
-
-    def _run_tray(self):
-        """运行托盘（阻塞）"""
-        if self._tray:
-            try:
-                self._tray.run()
+                import pystray
+                menu = pystray.Menu(
+                    pystray.MenuItem("显示主窗口", self._callback("show"), default=True),
+                    pystray.Menu.SEPARATOR,
+                    pystray.MenuItem("快速登录", self._callback("login")),
+                    pystray.MenuItem("登出并暂停守护", self._callback("logout")),
+                    pystray.MenuItem(
+                        lambda item: "暂停守护" if self._daemon_enabled else "开启守护",
+                        self._callback("daemon"),
+                    ),
+                    pystray.Menu.SEPARATOR,
+                    pystray.MenuItem("退出", self._callback("quit")),
+                )
+                self._tray = pystray.Icon(APP_ID, self._image(), APP_NAME, menu)
+                self._thread = threading.Thread(target=self._run, name="campus-tray", daemon=True)
+                self._thread.start()
             except Exception:
-                pass
+                log.exception("系统托盘不可用")
+                return False
+        self._ready.wait(timeout=3)
+        if not self._ready.is_set():
+            self.stop()
+            return False
+        return self.available
 
-    def hide(self):
-        """隐藏托盘图标"""
+    def _run(self):
+        def setup(icon):
+            if self._stopped.is_set():
+                icon.stop()
+                return
+            icon.visible = True
+            self.available = True
+            self._ready.set()
+        try:
+            self._tray.run(setup=setup)
+        except Exception:
+            log.exception("系统托盘启动失败")
+            self._ready.set()
+        finally:
+            self.available = False
+
+    def update_status(self, connected, daemon_running=False, daemon_enabled=None):
+        with self._lock:
+            enabled = daemon_running if daemon_enabled is None else daemon_enabled
+            if (connected, daemon_running, enabled) == (self._connected, self._daemon_running, self._daemon_enabled):
+                return
+            self._connected, self._daemon_running = connected, daemon_running
+            self._daemon_enabled = enabled
+            if self._tray and self.available:
+                self._tray.icon = self._image()
+                self._tray.title = APP_NAME + " · " + ("已连接" if connected else "未连接")
+                self._tray.update_menu()
+
+    def notify(self, title, message):
+        if self._tray and self.available:
+            try:
+                self._tray.notify(message, APP_NAME)
+            except Exception:
+                log.debug("系统通知不可用", exc_info=True)
+
+    def stop(self):
+        self._stopped.set()
+        self.available = False
         if self._tray:
             try:
-                self._tray.visible = False
                 self._tray.stop()
             except Exception:
-                pass
-
-    def update_status(self, connected: bool, daemon_running: bool = None):
-        """更新状态"""
-        if daemon_running is not None:
-            self._daemon_running = daemon_running
-
-        if self._connected != connected or self._daemon_running != daemon_running:
-            self._connected = connected
-            if self._tray:
-                try:
-                    self.hide()
-                    self._setup_pystray()
-                    self.show()
-                except Exception:
-                    pass
-
-    def set_daemon_status(self, running: bool):
-        """设置守护状态并更新托盘"""
-        if self._daemon_running != running:
-            self._daemon_running = running
-            if self._tray:
-                try:
-                    self.hide()
-                    self._setup_pystray()
-                    self.show()
-                except Exception:
-                    pass
-
-    def notify(self, title: str, message: str):
-        """显示通知"""
-        if self._tray:
-            try:
-                self._tray.notify(message, title)
-            except Exception:
-                pass
-
-    def minimize_to_tray(self):
-        """最小化到托盘"""
-        self.parent.withdraw()
-        try:
-            self._setup_pystray()
-            self.show()
-        except Exception as e:
-            log.error(f"托盘启动失败: {e}")
-
-    def restore_from_tray(self):
-        """从托盘恢复"""
-        self.hide()
-        self.parent.deiconify()
-        self.parent.focus()
+                log.debug("停止托盘失败", exc_info=True)

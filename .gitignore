@@ -1,17 +1,33 @@
-# Python
+# Python and local environments
 __pycache__/
 *.py[cod]
-*.pyc
 *.egg-info/
+*.egg
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Build products, distributions and diagnostic reports
 dist/
 build/
 *.build/
 *.dist/
-*.egg
-
-# 打包器生成的中间文件（可能包含构建机环境变量）
-nuitka-crash-report.xml
-campus-login-cli/campus-login.spec
+*.zip
+*.exe
+*.dll
+/*-crash-report.xml
+*.dmp
+*.har
+/reports/
+tests/.tmp/
+tests/.storage-test-*/
+tests/.publication-test-*/
 
 # IDE
 .vscode/
@@ -19,13 +35,38 @@ campus-login-cli/campus-login.spec
 *.swp
 *.swo
 
-# Claude
+# Local agent and editor state
 .claude/
 .agents/
+.codex/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# 本地配置（包含加密密钥和账号数据）
-# ~/.config/campus_login/
+# Local account data, encryption keys, credentials and logs
+# Runtime data normally lives outside the repository: ~/.config/campus_login/
+.config/
+campus_login/
+userdata/
+user_data/
+localdata/
+secrets/
+.env
+.env.*
+!.env.example
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+accounts.json
+settings.json
+*.key
+*.pem
+*.p12
+*.pfx
+*.log
+*.log.*
+logs/

@@ -1,4 +1,4 @@
-# WOFOLogin CLI
+# WOFO Login CLI · 佛山大学校园网断线守护
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../LICENSE)
 
