@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 from config.settings import AutoStartManager
 from ui.branding import APP_ID, APP_TITLE, ICON_PATH, ICON_PNG_PATH
 from ui.main_window import MainWindow
-from ui.tray import TrayIcon
+from ui.tray import TrayIcon, _GtkTrayCleanup
 
 
 class IdleLoop:
@@ -140,6 +140,70 @@ class LinuxTrayTests(unittest.TestCase):
         self.loop.drain()
         self.assertEqual(self.created, [])
         self.assertFalse(self.tray.start())
+
+
+class GtkNotificationCleanupTests(unittest.TestCase):
+    def make_icon(self, path, notifier):
+        class FakeBackend:
+            def __init__(self):
+                self._notifier = notifier
+                self._appindicator = object()
+
+            def _remove_fs_icon(self):
+                path.unlink()
+
+            def _finalize(self):
+                raise AssertionError("Upstream unconditionally closes notification ID 0")
+
+        class GtkIcon(_GtkTrayCleanup, FakeBackend):
+            pass
+
+        return GtkIcon()
+
+    def test_no_notification_never_contacts_dbus_and_cleans_icon_once(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent, prefix=".gtk-cleanup-") as directory:
+            path = Path(directory) / "tray.png"
+            path.write_bytes(b"temporary icon")
+            notifier = SimpleNamespace(_nid=0, hide=Mock())
+            icon = self.make_icon(path, notifier)
+            icon._finalize()
+            icon._finalize()
+            notifier.hide.assert_not_called()
+            self.assertFalse(path.exists())
+            self.assertFalse(hasattr(icon, "_appindicator"))
+
+    def test_existing_notification_is_closed_and_cleanup_is_idempotent(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent, prefix=".gtk-cleanup-") as directory:
+            path = Path(directory) / "tray.png"
+            path.write_bytes(b"temporary icon")
+            notifier = SimpleNamespace(_nid=17, hide=Mock())
+            icon = self.make_icon(path, notifier)
+            icon._finalize()
+            icon._finalize()
+            notifier.hide.assert_called_once_with()
+            self.assertFalse(path.exists())
+            self.assertFalse(hasattr(icon, "_appindicator"))
+
+    def test_partial_startup_without_notifier_still_cleans_native_resources(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent, prefix=".gtk-cleanup-") as directory:
+            path = Path(directory) / "tray.png"
+            path.write_bytes(b"temporary icon")
+            icon = self.make_icon(path, None)
+            icon._finalize()
+            self.assertFalse(path.exists())
+            self.assertFalse(hasattr(icon, "_appindicator"))
+
+    def test_real_notification_errors_are_not_swallowed(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent, prefix=".gtk-cleanup-") as directory:
+            path = Path(directory) / "tray.png"
+            path.write_bytes(b"temporary icon")
+            notifier = SimpleNamespace(_nid=17, hide=Mock(side_effect=RuntimeError("unexpected failure")))
+            icon = self.make_icon(path, notifier)
+            with self.assertRaisesRegex(RuntimeError, "unexpected failure"):
+                icon._finalize()
+            notifier.hide.assert_called_once_with()
+            self.assertFalse(path.exists())
+            self.assertFalse(hasattr(icon, "_appindicator"))
 
 
 class MainWindowPlatformTests(unittest.TestCase):

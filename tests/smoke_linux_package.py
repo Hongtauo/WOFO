@@ -105,6 +105,33 @@ def metadata(directory):
             for path in directory.rglob("*") if path.is_file()}
 
 
+def sanitize_log(text, isolated=None):
+    """Retain actionable GI errors from this empty test account environment."""
+    replacements = [(str(ROOT), "<workspace>"), (str(Path.home()), "<original-home>")]
+    if isolated is not None:
+        replacements.insert(0, (str(isolated), "<test-root>"))
+    for path, replacement in replacements:
+        text = text.replace(path, replacement)
+    text = re.sub(r"(?i)(https?://)[^\s/@]+:[^\s/@]+@", r"\1<redacted>@", text)
+    text = re.sub(r"(?i)\b(password|passwd|authorization|api[_-]?key|secret)"
+                  r"(\s*[:=]\s*)([^\s,;&]+)", r"\1\2<redacted>", text)
+    return text[-65536:]
+
+
+def failure_diagnostics(output, captured_log, isolated=None):
+    """Persist bounded diagnostics and emit the last real application traceback."""
+    log_text = sanitize_log("".join(captured_log), isolated)
+    (output / "application.log").write_text(log_text, encoding="utf-8")
+    marker = "Traceback (most recent call last)"
+    position = log_text.rfind(marker)
+    diagnostic = log_text[position:] if position >= 0 else "\n".join(log_text.splitlines()[-30:])
+    diagnostic = diagnostic[-10000:]
+    if diagnostic:
+        print("Packaged application failure diagnostics (isolated empty test data):", file=sys.stderr)
+        print(diagnostic, file=sys.stderr)
+    return log_text
+
+
 def run_xdotool(*arguments, allow_missing=False):
     result = subprocess.run(["xdotool", *map(str, arguments)], capture_output=True,
                             text=True, timeout=5, check=False)
@@ -156,6 +183,7 @@ def main():
     process = None
     captured_log = []
     log_reader = None
+    isolated = None
     proxy = ThreadingHTTPServer(("127.0.0.1", 0), ConnectivityProxy)
     threading.Thread(target=proxy.serve_forever, daemon=True).start()
     try:
@@ -261,6 +289,12 @@ def main():
                 process.wait(timeout=5)
         if log_reader:
             log_reader.join(timeout=2)
+        if not report["ok"]:
+            log_text = failure_diagnostics(output, captured_log, isolated)
+            report["application_log"] = "application.log"
+            report["application_traceback"] = "Traceback (most recent call last)" in log_text
+            report["application_exception_types"] = sorted(set(re.findall(
+                r"(?m)^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):", log_text)))
         proxy.shutdown()
         proxy.server_close()
 

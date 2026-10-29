@@ -10,6 +10,25 @@ from ui.branding import APP_ID, APP_NAME, ICON_PNG_PATH
 log = logging.getLogger("campus_login.tray")
 
 
+class _GtkTrayCleanup:
+    """Avoid pystray 0.19.5 closing notification ID 0 during GTK shutdown."""
+
+    def _finalize(self):
+        if getattr(self, "_wofo_finalized", False):
+            return
+        self._wofo_finalized = True
+        try:
+            self._remove_fs_icon()
+            notifier = getattr(self, "_notifier", None)
+            # ID 0 means no notification was sent. Calling CloseNotification(0)
+            # is invalid and fails on desktops with no notification service.
+            if notifier is not None and notifier._nid:
+                notifier.hide()
+        finally:
+            if hasattr(self, "_appindicator"):
+                del self._appindicator
+
+
 class TrayIcon:
     def __init__(self, on_login=None, on_logout=None, on_show=None,
                  on_quit=None, on_toggle_daemon=None, on_availability=None):
@@ -44,9 +63,16 @@ class TrayIcon:
 
     def _create_tray(self):
         import pystray
+        icon_class = pystray.Icon
         # 旧 GTK StatusIcon 和 Xorg 后端可能无图标或菜单，不能据此隐藏窗口。
-        if self._glib and pystray.Icon.__module__ != "pystray._appindicator":
-            raise RuntimeError("Linux 系统托盘需要 AppIndicator 支持")
+        if self._glib:
+            if icon_class.__module__ != "pystray._appindicator":
+                raise RuntimeError("Linux 系统托盘需要 AppIndicator 支持")
+
+            class GtkTrayIcon(_GtkTrayCleanup, icon_class):
+                pass
+
+            icon_class = GtkTrayIcon
         menu = pystray.Menu(
             pystray.MenuItem("显示主窗口", self._callback("show"), default=True),
             pystray.Menu.SEPARATOR,
@@ -59,7 +85,7 @@ class TrayIcon:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("退出", self._callback("quit")),
         )
-        return pystray.Icon(APP_ID, self._image(), APP_NAME, menu)
+        return icon_class(APP_ID, self._image(), APP_NAME, menu)
 
     def start(self):
         with self._lock:
