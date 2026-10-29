@@ -1,6 +1,5 @@
 """
-校园网认证核心模块
-从 campus_login.py 迁移的核心逻辑
+锐捷 ePortal 校园网认证核心模块。
 """
 
 import json
@@ -11,11 +10,38 @@ import urllib.parse
 import urllib.request
 import urllib.error
 import http.client
+import http.cookiejar
 import threading
-import html as html_utils
 from typing import Optional
 
 log = logging.getLogger("campus_login.core")
+
+# Only fixed local messages reach the UI; never retain raw portal responses.
+LOGIN_DIAGNOSTICS = {
+    "portal_not_found": "未能获取校园网认证参数，请确认校园网连接；浏览器可登录时请检查认证页跳转",
+    "portal_unreachable": "无法访问认证页面，请检查校园网连接、路由器和代理设置",
+    "portal_http_error": "认证接口返回异常 HTTP 状态，请确认校园网认证服务可用",
+    "rsa_unavailable": "认证页面未返回可用的加密公钥，请确认校园网认证页面未发生变化",
+    "login_rejected": "认证服务器未接受登录，请检查账号、密码、运营商及账号终端限制",
+    "login_bad_response": "认证接口未返回有效的登录结果，请检查认证页面或代理设置",
+    "login_transport_error": "认证请求未能完成，请检查校园网连接、路由器和代理设置",
+    "login_accepted": "认证服务器已接受登录",
+}
+_request_state = threading.local()
+
+
+def clear_login_diagnostic():
+    _request_state.diagnostic = None
+
+
+def get_last_login_diagnostic() -> dict:
+    code = getattr(_request_state, "diagnostic", None)
+    return {"code": code, "message": LOGIN_DIAGNOSTICS[code]} if code in LOGIN_DIAGNOSTICS else {}
+
+
+def _login_diagnostic(code):
+    _request_state.diagnostic = code
+    log.info("%s", LOGIN_DIAGNOSTICS[code])
 
 # ========================= 配置区域 =========================
 
@@ -49,7 +75,10 @@ def _rsa_encrypt(message: str, exponent_hex: str, modulus_hex: str) -> str:
 
     m_hex = format(m, 'x')
     num_digits = (len(m_hex) + 3) // 4
-    chunk_size = 2 * num_digits
+    # Browser RSAKeyPair leaves the highest 16-bit digit empty.
+    chunk_size = 2 * (num_digits - 1)
+    if e <= 0 or m <= 0 or chunk_size <= 0:
+        raise ValueError("Invalid portal RSA public key")
 
     char_codes = [ord(c) for c in message]
     while len(char_codes) % chunk_size != 0:
@@ -68,14 +97,20 @@ def _rsa_encrypt(message: str, exponent_hex: str, modulus_hex: str) -> str:
 
         crypt = pow(block, e, m)
         hex_str = format(crypt, 'x')
+        hex_str = hex_str.zfill(((len(hex_str) + 3) // 4) * 4)
         result_parts.append(hex_str)
 
     return " ".join(result_parts)
 
 
-def encrypt_password(password: str, exponent_hex: str, modulus_hex: str) -> str:
-    """加密密码（反转 + RSA）"""
-    reversed_pwd = password[::-1]
+def encrypt_password(password: str, exponent_hex: str, modulus_hex: str,
+                     mac: str = "111111111") -> str:
+    """ePortal reverses password + '>' + portal MAC before legacy RSA.
+
+    Behind NAT this must be the upstream MAC from the portal query, rather than
+    the computer's local adapter. References/vectors: test_auth_protocol.py.
+    """
+    reversed_pwd = (password + ">" + (mac or "111111111"))[::-1]
     return _rsa_encrypt(reversed_pwd, exponent_hex, modulus_hex)
 
 
@@ -87,7 +122,15 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
         return None
 
 
-_no_redirect_opener = urllib.request.build_opener(_NoRedirectHandler)
+def _http_opener(follow_redirects=True):
+    # Keep discovery/pageInfo/login cookies in a worker-local browser session.
+    if not hasattr(_request_state, "openers"):
+        jar = http.cookiejar.CookieJar()
+        _request_state.openers = {
+            True: urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar)),
+            False: urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), _NoRedirectHandler),
+        }
+    return _request_state.openers[bool(follow_redirects)]
 _default_headers = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -102,15 +145,12 @@ def _http_get(url: str, *, timeout: int = 10,
     """GET 请求, 返回 (status_code, body, final_url)"""
     req = urllib.request.Request(url, headers=_default_headers)
     try:
-        if follow_redirects:
-            resp = urllib.request.urlopen(req, timeout=timeout)
-        else:
-            resp = _no_redirect_opener.open(req, timeout=timeout)
-        body = resp.read().decode("utf-8", errors="replace")
-        return resp.status, body, resp.url
+        with _http_opener(follow_redirects).open(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            return resp.status, body, resp.url
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace") if e.fp else ""
-        return e.code, body, e.headers.get("Location", url)
+        return e.code, body, urllib.parse.urljoin(url, e.headers.get("Location", url))
     except (urllib.error.URLError, http.client.HTTPException, OSError):
         raise
 
@@ -126,9 +166,9 @@ def _http_post(url: str, data: str, *, timeout: int = 10,
         url, data=data.encode("utf-8"), headers=headers, method="POST",
     )
     try:
-        resp = urllib.request.urlopen(req, timeout=timeout)
-        body = resp.read().decode("utf-8", errors="replace")
-        return resp.status, body
+        with _http_opener().open(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            return resp.status, body
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace") if e.fp else ""
         return e.code, body
@@ -208,51 +248,95 @@ def check_network() -> bool:
 
 def get_query_string() -> Optional[str]:
     """通过访问外网触发认证重定向, 从重定向 URL 中提取 queryString"""
+    received_response = False
     for url in _connectivity_urls():
         try:
             _, body, final_url = _http_get(
                 url, timeout=10, follow_redirects=True,
             )
-            log.info(f"重定向最终 URL: {final_url}")
+            received_response = True
 
             query_string = _extract_query_string_from_url(final_url)
             if not query_string:
                 query_string = _extract_query_string_from_html(body)
 
             if query_string:
-                log.info(f"提取到 queryString: {query_string[:80]}...")
+                log.info("已获取校园网认证参数")
                 return query_string
-        except (urllib.error.URLError, http.client.HTTPException, OSError) as e:
-            log.warning(f"通过 {url} 获取 queryString 失败: {e}")
+        except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
+            log.warning("认证跳转探测未完成（%s）", type(exc).__name__)
 
-    log.error("获取 queryString 失败: 所有探测 URL 均未返回认证参数")
+    _login_diagnostic("portal_not_found" if received_response else "portal_unreachable")
     return None
 
 
 def _extract_query_string_from_url(url: str) -> Optional[str]:
     """从认证页 URL 中提取原始 queryString。"""
-    parsed = urllib.parse.urlparse(url)
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        return None
     if not parsed.query:
         return None
 
-    params = urllib.parse.parse_qs(parsed.query)
-    if "wlanuserip" not in params or "wlanacname" not in params:
-        return None
+    return _validated_query_string(parsed.query)
 
-    return parsed.query
+
+def _validated_query_string(query: str) -> Optional[str]:
+    """Preserve raw values and parameter order; unwrap encoded query strings."""
+    query = query.strip().lstrip("?")
+    for _ in range(3):
+        params = {key.lower(): value for key, value in
+                  urllib.parse.parse_qs(query, keep_blank_values=True).items()}
+        if (any(params.get("wlanuserip", []))
+                and (any(params.get("wlanacname", [])) or any(params.get("wlanacip", [])))):
+            return query
+        unwrapped = urllib.parse.unquote(query)
+        if unwrapped == query:
+            break
+        query = unwrapped
+    return None
+
+
+def _portal_mac(query_string: str) -> str:
+    # Browser getQueryStringByName returns the raw, still percent-encoded value.
+    match = re.search(r"(?:^|&)mac=([^&]*)", query_string, re.IGNORECASE)
+    return match.group(1) if match and match.group(1) else "111111111"
+
+
+def _js_literal_value(value: str) -> str:
+    """Decode URL-related JavaScript escapes without executing page scripts."""
+    value = value.replace(r"\/", "/")
+    return re.sub(r"\\(?:x([0-9a-fA-F]{2})|u([0-9a-fA-F]{4}))",
+                  lambda match: chr(int(match.group(1) or match.group(2), 16)), value)
+
+
+def _query_from_candidate(value: str) -> Optional[str]:
+    value = _js_literal_value(value).strip()
+    query = _extract_query_string_from_url(value) if "?" in value else None
+    return query or _validated_query_string(value)
 
 
 def _extract_query_string_from_html(html: str) -> Optional[str]:
-    """从 HTML 页面中提取 queryString"""
-    patterns = [
-        r"queryString\s*=\s*['\"]([^'\"]+)['\"]",
-        r"wlanuserip=[\w.]+&wlanacname=[\w-]+[^'\"<>\s]*",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, html)
-        if match:
-            qs = match.group(1) if match.lastindex else match.group(0)
-            return html_utils.unescape(qs)
+    """Read JS/meta redirect parameters without depending on their order."""
+    # Decode explicit ampersand entities only. Generic html.unescape would
+    # corrupt legitimate query fields such as &copy= or &notin=.
+    page = re.sub(r"&(?:amp|#0*38|#x0*26);", "&", html, flags=re.IGNORECASE)
+    for match in re.finditer(r"(['\"])(.*?)\1", page, re.DOTALL):
+        candidate = match.group(2)
+        if "wlanuserip" not in candidate.lower():
+            continue
+        query = _query_from_candidate(candidate)
+        if query:
+            return query
+    for match in re.finditer(r"(?:https?://|/eportal/)[^\s'\"<>]+", page, re.IGNORECASE):
+        query = _query_from_candidate(match.group(0))
+        if query:
+            return query
+    for match in re.finditer(r"wlanuserip=[^\s'\"<>]+", page, re.IGNORECASE):
+        query = _validated_query_string(match.group(0))
+        if query:
+            return query
     return None
 
 
@@ -262,46 +346,61 @@ def get_rsa_key(query_string: str) -> Optional[tuple[str, str]]:
     post_body = f"queryString={encoded_qs}"
 
     try:
-        _, body = _http_post(CONFIG["page_info_url"], data=post_body, timeout=10)
+        status, body = _http_post(CONFIG["page_info_url"], data=post_body, timeout=10)
+        if not 200 <= status < 300:
+            _login_diagnostic("portal_http_error")
+            return None
         result = json.loads(body)
-        exponent = result.get("publicKeyExponent")
-        modulus = result.get("publicKeyModulus")
+        exponent = result.get("publicKeyExponent") if isinstance(result, dict) else None
+        modulus = result.get("publicKeyModulus") if isinstance(result, dict) else None
 
-        if exponent and modulus:
+        if (isinstance(exponent, str) and isinstance(modulus, str)
+                and int(exponent, 16) > 0 and int(modulus, 16).bit_length() > 16):
             log.info(f"获取到 RSA 公钥")
             return exponent, modulus
         else:
-            log.warning(f"pageInfo 响应中缺少公钥")
+            _login_diagnostic("rsa_unavailable")
             return None
-    except (urllib.error.URLError, http.client.HTTPException, OSError) as e:
-        log.error(f"获取 RSA 公钥失败: {e}")
+    except (urllib.error.URLError, http.client.HTTPException, OSError):
+        _login_diagnostic("portal_unreachable")
         return None
-    except json.JSONDecodeError:
-        log.error(f"pageInfo 响应不是有效 JSON")
+    except (ValueError, TypeError):
+        _login_diagnostic("rsa_unavailable")
         return None
 
 
 def do_login(user_id: str, password: str, service: str) -> bool:
     """执行登录请求"""
+    clear_login_diagnostic()
     query_string = get_query_string()
     if not query_string:
-        log.error("无法获取 queryString, 可能未连接到校园网 WiFi")
+        if not get_last_login_diagnostic():
+            _login_diagnostic("portal_not_found")
         return False
 
     rsa_key = get_rsa_key(query_string)
     if not rsa_key:
-        log.error("无法获取 RSA 公钥")
+        if not get_last_login_diagnostic():
+            _login_diagnostic("rsa_unavailable")
         return False
     exponent, modulus = rsa_key
 
-    encrypted_pwd = encrypt_password(password, exponent, modulus)
-    encoded_query_string = urllib.parse.quote(query_string, safe="")
+    try:
+        encrypted_pwd = encrypt_password(password, exponent, modulus, _portal_mac(query_string))
+    except (ValueError, TypeError):
+        _login_diagnostic("rsa_unavailable")
+        return False
+
+    # The page encodes values once, and the form encoder adds another layer.
+    # pageInfo above intentionally uses only one layer.
+    def login_field(value):
+        return urllib.parse.quote(urllib.parse.quote(value, safe=""), safe="")
 
     post_body = "&".join([
-        f"userId={urllib.parse.quote(user_id, safe='')}",
-        f"password={urllib.parse.quote(encrypted_pwd, safe='')}",
-        f"service={urllib.parse.quote(service, safe='')}",
-        f"queryString={encoded_query_string}",
+        f"userId={login_field(user_id)}",
+        f"password={login_field(encrypted_pwd)}",
+        f"service={login_field(service)}",
+        f"queryString={login_field(query_string)}",
         "operatorPwd=",
         "operatorUserId=",
         "validcode=",
@@ -320,22 +419,23 @@ def do_login(user_id: str, password: str, service: str) -> bool:
             extra_headers=extra_headers,
         )
 
-        log.info(f"登录响应: {body[:200]}")
-
+        if not 200 <= status < 300:
+            _login_diagnostic("portal_http_error")
+            return False
         try:
             result = json.loads(body)
-            if result.get("result") == "success":
-                log.info("登录成功")
+            if isinstance(result, dict) and result.get("result") == "success":
+                _login_diagnostic("login_accepted")
                 return True
             else:
-                msg = result.get("message", "未知错误")
-                log.warning(f"登录失败: {msg}")
+                _login_diagnostic("login_rejected" if isinstance(result, dict) else "login_bad_response")
                 return False
         except json.JSONDecodeError:
-            return "success" in body.lower()
+            _login_diagnostic("login_bad_response")
+            return False
 
-    except (urllib.error.URLError, http.client.HTTPException, OSError) as e:
-        log.error(f"登录请求异常: {e}")
+    except (urllib.error.URLError, http.client.HTTPException, OSError):
+        _login_diagnostic("login_transport_error")
         return False
 
 
@@ -355,16 +455,17 @@ def do_logout() -> bool:
         user_index = get_user_index() or ""
         post_body = f"userIndex={urllib.parse.quote(user_index, safe='')}"
         _, body = _http_post(CONFIG["logout_url"], data=post_body, timeout=10)
-        log.info(f"登出响应: {body[:200]}")
         return "success" in body.lower()
-    except (urllib.error.URLError, http.client.HTTPException, OSError) as e:
-        log.error(f"登出失败: {e}")
+    except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
+        log.error("登出请求未完成（%s）", type(exc).__name__)
         return False
 
 
 def login(user_id: str, password: str, service: str) -> bool:
     """执行一次完整登录流程"""
-    log.info(f"正在登录 (用户: {user_id}, 服务: {service})...")
+    clear_login_diagnostic()
+    _request_state.__dict__.pop("openers", None)
+    log.info("正在尝试校园网认证")
     if check_network():
         log.info("网络已连通, 无需登录")
         return True

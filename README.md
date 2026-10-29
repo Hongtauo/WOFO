@@ -8,7 +8,7 @@
 [![Ubuntu desktop build](https://github.com/Hongtauo/WOFO/actions/workflows/build-linux-gui.yml/badge.svg)](https://github.com/Hongtauo/WOFO/actions/workflows/build-linux-gui.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-一个面向 Dr.COM ePortal 的校园网连接工具。保存校园网账号后，WOFO Login 会在后台检测网络，并在断线时使用所选账号重新认证。
+一个面向锐捷 ePortal 的校园网连接工具。保存校园网账号后，WOFO Login 会在后台检测网络，并在断线时使用所选账号重新认证。
 
 桌面版共用本地 WebView 界面：Windows 使用 WebView2，Ubuntu 22.04 使用 GTK 3 / WebKitGTK。macOS / Linux 另有独立的命令行版本。
 
@@ -26,11 +26,13 @@
 
 主动登出会暂停自动重连；退出应用会保留所选账号与守护偏好。界面资源随程序本地加载，不需要 Node.js 或在线 CDN。
 
+1.0.1 修正锐捷 ePortal 的认证请求：沿用认证重定向参数中的路由器上游 MAC，兼容页面的 RSA 加密规则和双重表单编码。实际校园网认证仍需在校内、路由器环境中验证。
+
 ## Windows 快速开始
 
 ### 获取程序
 
-打开 [Windows 构建记录](https://github.com/Hongtauo/WOFO/actions/workflows/build-windows.yml)，选择成功的运行，下载 `WOFO-Login-Windows` 构建产物。解压其中的 `WOFO Login.zip` 后会得到：
+从 [最新 Release](https://github.com/Hongtauo/WOFO/releases/latest) 下载 [Windows 完整包](https://github.com/Hongtauo/WOFO/releases/latest/download/WOFO-Login_1.0.1_windows_x64.zip)。解压 `WOFO-Login_1.0.1_windows_x64.zip` 后会得到：
 
 ```text
 WOFO Login/
@@ -39,6 +41,8 @@ WOFO Login/
 ├── 卸载.cmd
 └── 使用说明.txt
 ```
+
+开发构建也可从 [Windows 构建记录](https://github.com/Hongtauo/WOFO/actions/workflows/build-windows.yml) 中成功的运行下载 `WOFO-Login-Windows` 构建产物。
 
 直接运行 `WOFO Login.exe` 即可。程序需要 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)；如果启动提示缺少运行时，请先安装它。
 
@@ -64,14 +68,16 @@ WOFO Login/
 
 ## Ubuntu 22.04 图形界面版
 
-打开 [Ubuntu 桌面版构建记录](https://github.com/Hongtauo/WOFO/actions/workflows/build-linux-gui.yml)，选择成功的运行，下载 `WOFO-Login-Ubuntu-22.04-amd64` 构建产物。目标系统为 **Ubuntu 22.04 x86_64（amd64）**，需要桌面会话。
+从 [最新 Release](https://github.com/Hongtauo/WOFO/releases/latest) 下载 [Ubuntu 22.04 安装包](https://github.com/Hongtauo/WOFO/releases/latest/download/WOFO-Login_1.0.1_ubuntu22.04_amd64.deb) 或 [便携包](https://github.com/Hongtauo/WOFO/releases/latest/download/WOFO-Login_1.0.1_ubuntu22.04_amd64.tar.gz)。目标系统为 **Ubuntu 22.04 x86_64（amd64）**，需要桌面会话。
 
-解压下载的构建产物后，在该目录安装：
+在下载目录安装：
 
 ```bash
-sudo apt install ./WOFO-Login_1.0.0_ubuntu22.04_amd64.deb
+sudo apt install ./WOFO-Login_1.0.1_ubuntu22.04_amd64.deb
 wofo-login-gui
 ```
+
+开发构建也可从 [Ubuntu 桌面版构建记录](https://github.com/Hongtauo/WOFO/actions/workflows/build-linux-gui.yml) 中成功的运行下载 `WOFO-Login-Ubuntu-22.04-amd64` 构建产物，解压后安装其中的 `.deb`。
 
 也可以从应用菜单打开「WOFO Login」。安装器会通过 Ubuntu 软件源安装 GTK、WebKitGTK 和 AppIndicator 运行库，无需自行安装 Python 或 Node.js。界面及账号操作与 Windows 版相同。
 
@@ -86,7 +92,7 @@ sudo apt install libgtk-3-0 libwebkit2gtk-4.0-37 \
   gir1.2-gtk-3.0 gir1.2-webkit2-4.0 gir1.2-ayatanaappindicator3-0.1 gir1.2-freedesktop \
   libgirepository-1.0-1 libcairo2 libffi8 libsqlite3-0 libssl3 \
   libbz2-1.0 liblzma5 libexpat1 zlib1g fonts-noto-cjk
-tar -xzf WOFO-Login_1.0.0_ubuntu22.04_amd64.tar.gz
+tar -xzf WOFO-Login_1.0.1_ubuntu22.04_amd64.tar.gz
 ./WOFO-Login/run.sh
 ```
 

@@ -2,7 +2,7 @@ WOFO Login · 佛山大学校园网断线守护
 Ubuntu 22.04 desktop / amd64
 
 Recommended installation:
-  sudo apt install ./WOFO-Login_1.0.0_ubuntu22.04_amd64.deb
+  sudo apt install ./WOFO-Login_1.0.1_ubuntu22.04_amd64.deb
 Then open WOFO Login from the application menu, or run wofo-login-gui.
 
 Portable archive:

@@ -362,21 +362,36 @@ class AppApi:
         if self._stop.is_set():
             return
         try:
+            diagnostic = {}
             if operation == "login":
+                # 与认证请求在同一工作线程清理诊断，防止上次失败污染本次结果。
+                auth.clear_login_diagnostic()
                 success = auth.login(account.user_id, account.password, account.service)
+                diagnostic = auth.get_last_login_diagnostic()
             else:
                 success = auth.logout()
             connected = auth.check_network() if not self._stop.is_set() else False
             with self._lock:
                 self._network_result(connected)
                 if operation == "login":
-                    success = bool(success and connected)
-                    message = "网络已连接" if success else "登录未能连通外网，请检查校园网连接、账号或运营商"
+                    accepted = bool(success)
+                    success = bool(connected)
+                    if success:
+                        message = "网络已连接"
+                    elif accepted:
+                        message = "认证已接受，外网尚未通过检测，请稍后重试；若持续失败，请检查路由器和校园网连接"
+                    else:
+                        # 仅根据代码取静态文案，绝不显示服务端原始响应或诊断附带文本。
+                        code = diagnostic.get("code") if isinstance(diagnostic, dict) else None
+                        message = auth.LOGIN_DIAGNOSTICS.get(code) if isinstance(code, str) else None
+                        if not message or code == "login_accepted":
+                            message = "登录未能连通外网，请检查校园网连接、账号或运营商"
                 else:
                     message = "已登出，自动重连已暂停" if success else "登出失败，自动重连已暂停，请检查网络"
                 self._event(message, "success" if success else "error")
-        except Exception:
-            log.exception("网络操作异常")
+        except Exception as exc:
+            # HTTP 异常文本可能包含认证 URL 或原始报文，只记录异常类型。
+            log.error("网络操作异常（%s）", type(exc).__name__)
             message = "网络操作失败，请检查网络后重试"
             with self._lock:
                 self._event(message, "error")
@@ -425,8 +440,8 @@ class AppApi:
                 else:
                     self._wake.wait(max(0, next_check - time.monotonic()))
                     continue
-            except Exception:
-                log.exception("网络检测异常")
+            except Exception as exc:
+                log.error("网络检测异常（%s）", type(exc).__name__)
                 with self._lock:
                     self._network["checking"] = False
                     self._event("网络检测失败，将在下次检测时重试", "error")

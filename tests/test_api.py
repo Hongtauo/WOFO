@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from config.settings import Settings
+from core import auth
 from database.db import Database
 from ui.api import AppApi
 
@@ -278,7 +279,7 @@ class AppApiTests(unittest.TestCase):
         self.assertTrue(initial)
         previous_id = initial[-1]["id"]
         self.login_mock.side_effect = RuntimeError("private-login-password")
-        with self.assertLogs("campus_login.api", level="ERROR"):
+        with self.assertLogs("campus_login.api", level="ERROR") as recorded:
             self.assertTrue(self.api.login()["ok"])
             state = self.wait_state(
                 lambda state: not state["busy"] and state["last_event"]["level"] == "error",
@@ -287,6 +288,7 @@ class AppApiTests(unittest.TestCase):
         self.assertGreaterEqual(len(new_logs), 2)  # Start and failure remain inspectable.
         self.assertTrue(any(event["level"] == "error" for event in new_logs))
         self.assert_private(state, "private-login-password")
+        self.assertNotIn("private-login-password", "\n".join(recorded.output))
 
         previous_id = state["logs"][-1]["id"]
         self.api._close()
@@ -449,6 +451,124 @@ class AppApiTests(unittest.TestCase):
         self.wait_state(lambda state: not state["busy"])
         self.assertTrue(self.api.get_state()["last_event"])
 
+    def test_failed_login_reports_safe_stage_without_raw_diagnostic_message(self):
+        saved = self.add_account(password="private-stage-password")
+        account = self.db.get_account(saved["id"])
+        self.login_mock.return_value = False
+        self.network.return_value = False
+        for code in (
+            "portal_not_found", "portal_unreachable", "portal_http_error",
+            "rsa_unavailable", "login_rejected", "login_bad_response", "login_transport_error",
+        ):
+            with self.subTest(code=code), \
+                    patch("ui.api.auth.clear_login_diagnostic") as clear, \
+                    patch("ui.api.auth.get_last_login_diagnostic", return_value={
+                        "code": code,
+                        "message": "raw-response-with-private-stage-password-and-queryString",
+                    }):
+                self.api._run_operation("login", account)
+                state = self.api.get_state()
+                clear.assert_called_once_with()
+                self.assertEqual(state["last_event"]["message"],
+                                 auth.LOGIN_DIAGNOSTICS[code])
+                self.assertEqual(state["last_event"]["level"], "error")
+                self.assertFalse(state["network"]["connected"])
+                self.assert_private(state, "private-stage-password", "raw-response", "queryString")
+
+    def test_missing_unknown_or_invalid_login_diagnostic_uses_generic_failure(self):
+        saved = self.add_account()
+        account = self.db.get_account(saved["id"])
+        self.login_mock.return_value = False
+        self.network.return_value = False
+        for diagnostic in (
+            {}, None, {"code": "server-private-message", "message": "sensitive-response"},
+            {"code": ["portal_not_found"], "message": "sensitive-response"},
+            {"code": "login_accepted", "message": "sensitive-response"},
+        ):
+            with self.subTest(diagnostic=diagnostic), \
+                    patch("ui.api.auth.get_last_login_diagnostic", return_value=diagnostic):
+                self.api._run_operation("login", account)
+                state = self.api.get_state()
+                self.assertEqual(state["last_event"]["message"],
+                                 "登录未能连通外网，请检查校园网连接、账号或运营商")
+                self.assertEqual(state["last_event"]["level"], "error")
+                self.assert_private(state, "server-private-message", "sensitive-response")
+
+    def test_accepted_login_with_offline_probe_explains_pending_connectivity(self):
+        saved = self.add_account()
+        account = self.db.get_account(saved["id"])
+        self.login_mock.return_value = True
+        self.network.return_value = False
+        with patch("ui.api.auth.get_last_login_diagnostic", return_value={
+            "code": "login_accepted", "message": "private-auth-response",
+        }):
+            self.api._run_operation("login", account)
+        state = self.api.get_state()
+        self.assertFalse(state["network"]["connected"])
+        self.assertIn("认证已接受", state["last_event"]["message"])
+        self.assertIn("外网尚未通过检测", state["last_event"]["message"])
+        self.assertNotIn("账号或运营商", state["last_event"]["message"])
+        self.assert_private(state, "private-auth-response")
+        self.network.assert_called_once_with()  # No extra synchronous probes delay the worker.
+
+    def test_verified_online_probe_takes_priority_over_login_result(self):
+        saved = self.add_account()
+        account = self.db.get_account(saved["id"])
+        self.network.return_value = True
+        for accepted in (True, False):
+            with self.subTest(accepted=accepted), \
+                    patch("ui.api.auth.get_last_login_diagnostic", return_value={
+                        "code": "login_rejected", "message": "private-auth-response",
+                    }):
+                self.login_mock.return_value = accepted
+                self.api._run_operation("login", account)
+                state = self.api.get_state()
+                self.assertTrue(state["network"]["connected"])
+                self.assertEqual(state["last_event"]["message"], "网络已连接")
+                self.assertEqual(state["last_event"]["level"], "success")
+                self.assert_private(state, "private-auth-response")
+
+    def test_worker_clears_thread_local_diagnostic_before_each_login(self):
+        self.add_account()
+        self.start_api()
+        diagnostic = threading.local()
+        cleared_threads = []
+        login_threads = []
+        stale_codes = []
+
+        def clear_diagnostic():
+            diagnostic.value = {}
+            cleared_threads.append(threading.get_ident())
+
+        def failed_login(*args):
+            login_threads.append(threading.get_ident())
+            stale_codes.append(getattr(diagnostic, "value", {}).get("code"))
+            if len(login_threads) == 1:
+                diagnostic.value = {"code": "portal_not_found", "message": "private-old-response"}
+            return False
+
+        self.network.return_value = False
+        self.login_mock.side_effect = failed_login
+        with patch("ui.api.auth.clear_login_diagnostic", side_effect=clear_diagnostic), \
+                patch("ui.api.auth.get_last_login_diagnostic",
+                      side_effect=lambda: dict(getattr(diagnostic, "value", {}))):
+            for attempt in range(2):
+                previous = self.api.get_state()["last_event"]
+                previous_id = previous["id"] if previous else 0
+                self.assertTrue(self.api.login()["ok"])
+                state = self.wait_state(
+                    lambda current: not current["busy"] and current["last_event"]
+                    and current["last_event"]["id"] > previous_id,
+                )
+                if attempt == 1:
+                    self.assertEqual(state["last_event"]["message"],
+                                     "登录未能连通外网，请检查校园网连接、账号或运营商")
+                self.assert_private(state, "private-old-response")
+        self.assertEqual(stale_codes, [None, None])
+        self.assertEqual(cleared_threads, login_threads)
+        self.assertEqual(len(set(login_threads)), 1)
+        self.assertNotEqual(login_threads[0], threading.get_ident())
+
     def test_logout_disables_reconnect_and_keeps_network_offline(self):
         self.add_account()
         self.api.toggle_daemon(True)
@@ -470,14 +590,15 @@ class AppApiTests(unittest.TestCase):
 
         def failed_check():
             checked.set()
-            raise RuntimeError("simulated probe failure")
+            raise RuntimeError("private-probe-url-queryString")
 
         self.network.side_effect = failed_check
-        with self.assertLogs("campus_login.api", level="ERROR"):
+        with self.assertLogs("campus_login.api", level="ERROR") as recorded:
             self.api._start()
             self.assertTrue(checked.wait(2), "worker did not perform initial check")
             self.wait_state(lambda state: not state["network"]["checking"] and not state["busy"])
             self.network.side_effect = None
+        self.assertNotIn("private-probe-url-queryString", "\n".join(recorded.output))
         self.network.return_value = True
         response = self.api.login()
         self.assertTrue(response["ok"], response)

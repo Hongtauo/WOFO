@@ -6,7 +6,7 @@ APP_NAME = "WOFO Login"
 APP_TITLE = "WOFO Login · 佛山大学校园网断线守护"
 APP_DISPLAY_NAME = APP_TITLE
 APP_ID = "WOFO.Login"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 
 # 源码运行和 PyInstaller 解包后的目录结构一致。
 ASSET_DIR = Path(__file__).resolve().parent / "assets"

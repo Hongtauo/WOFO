@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-WOFO Login · 佛山大学校园网断线守护 — Dr.COM ePortal 客户端，Windows 使用 pywebview，macOS / Linux 的独立命令行版本位于 campus-login-cli/。
+WOFO Login · 佛山大学校园网断线守护 — 锐捷 ePortal 客户端。桌面版共用 pywebview 界面，Windows 使用 WebView2，Ubuntu 22.04 使用 GTK 3 / WebKitGTK。macOS / Linux 的独立命令行版本位于 campus-login-cli/，其版本和打包与桌面版独立。
 
 ## Running
 
@@ -37,6 +37,8 @@ WOFO/
 ## Key Configuration
 
 `core/auth.py` 中的 CONFIG 字典配置 portal 服务器地址和检测参数。
+
+锐捷 ePortal 的认证参数来自校园网重定向 URL。认证时保留原始 queryString 及其中的上游 MAC，兼容页面的 RSA 加密规则和双重表单编码，不要用路由器内网主机的 MAC 覆盖认证参数。离线协议测试不能替代实际校园网验证。
 
 ## Data Storage
 

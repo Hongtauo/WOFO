@@ -30,7 +30,7 @@ def main():
                 name = str(path.relative_to(ROOT)).replace("/", "\\")
                 assert archive.extract(name) == path.read_bytes(), f"资源不一致：{name}"
     embedded = archive.open_embedded_archive("PYZ.pyz")
-    for name in ("app_lifecycle", "ui.api", "ui.branding", "ui.main_window", "ui.tray"):
+    for name in ("app_lifecycle", "core.auth", "ui.api", "ui.branding", "ui.main_window", "ui.tray"):
         source = ROOT / (name.replace(".", "/") + ".py")
         expected = compile(source.read_text(encoding="utf-8"), str(source), "exec")
         assert normalized(embedded.extract(name)) == normalized(expected), f"代码不一致：{name}"
