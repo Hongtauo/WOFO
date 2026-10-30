@@ -12,6 +12,10 @@
 
 桌面版共用本地 WebView 界面：Windows 使用 WebView2，Ubuntu 22.04 使用 GTK 3 / WebKitGTK。macOS / Linux 另有独立的命令行版本。
 
+![WOFO Login 主界面：校园网连接状态、断线守护和账号选择](docs/images/main-window.png)
+
+截图中的账号均为虚构演示账号，连接状态为模拟数据，不含真实账号信息。
+
 ## 功能
 
 | 功能 | 说明 |

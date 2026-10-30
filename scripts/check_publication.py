@@ -18,7 +18,7 @@ import subprocess
 
 SOURCE_DIRECTORIES = frozenset({
     "core", "config", "database", "ui", "scripts", "tests", "packaging", ".github",
-    "campus-login-cli",
+    "campus-login-cli", "docs",
 })
 ROOT_FILES = frozenset({
     ".gitignore", ".gitattributes", "main.py", "app_lifecycle.py", "requirements.txt", "README.md",
